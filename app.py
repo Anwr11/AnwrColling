@@ -3,16 +3,16 @@ import os, time, random
 from flask import Flask, render_template, jsonify, request
 from flask_socketio import SocketIO, emit, join_room, leave_room
 
-# Socket.IO server (CORS مفتوح كبداية؛ عدّله لاحقًا إلى دومينك)
-socketio = SocketIO(cors_allowed_origins="*", async_mode="gevent")
+# نستخدم gevent (Start Command في Render: gunicorn wsgi:app -k gevent -w 1 -b 0.0.0.0:$PORT)
+socketio = SocketIO(cors_allowed_origins="*")
 
 USERS = {}          # number -> sid
 SIDS = {}           # sid -> number
 CONNS = {}          # room_id -> set(numbers)
 
 def make_number():
-    # رقم 9 خانات يبدأ بـ 70/71/73/77/78 للتجربة (غير حقيقي)
-    prefix = random.choice(["70","71","73","77","78"])
+    # رقم 9 خانات يبدأ بـ 33 + 7 أرقام
+    prefix = "33"
     rest = "".join(random.choice("0123456789") for _ in range(7))
     return prefix + rest
 
@@ -42,7 +42,7 @@ def create_app():
 
     return app
 
-# -------- Socket.IO Events --------
+# ----------------- Socket.IO Events -----------------
 
 @socketio.on("connect")
 def on_connect():
@@ -57,7 +57,6 @@ def on_register(data):
     SIDS[request.sid] = num
     join_room(f"user:{num}")
     emit("registered", {"number": num})
-    # إعلام الآخرين بحالة المستخدم
     emit("presence", {"number": num, "status": "online"}, broadcast=True)
 
 @socketio.on("start_chat")
@@ -75,9 +74,8 @@ def on_start_chat(data):
 @socketio.on("leave_chat")
 def on_leave_chat(data):
     me = SIDS.get(request.sid)
-    peer = str(data.get("peer", ""))
-    if not me or not peer:
-        return
+    peer = str(data.get("peer",""))
+    if not me or not peer: return
     room = conv_room(me, peer)
     leave_room(room)
     emit("system", {"room": room, "text": f"{me} غادر المحادثة."}, room=room)
@@ -97,13 +95,14 @@ def on_message(data):
     payload = {"from": me, "text": text, "ts": time.time()}
     emit("message", payload, room=room)
 
-# -------- WebRTC Signaling over Socket.IO --------
+# -------- WebRTC signaling (مع قبول/رفض) --------
 @socketio.on("webrtc-offer")
 def on_offer(data):
     me = SIDS.get(request.sid); peer = str(data.get("peer",""))
     sdp = data.get("sdp")
     if not me or not peer or not sdp: return
     room = conv_room(me, peer)
+    # نرسل العرض للطرف الآخر (ستظهر له نافذة القبول/الرفض في الواجهة)
     emit("webrtc-offer", {"from": me, "sdp": sdp}, room=room, include_self=False)
 
 @socketio.on("webrtc-answer")
@@ -122,6 +121,13 @@ def on_ice(data):
     room = conv_room(me, peer)
     emit("webrtc-ice", {"from": me, "candidate": cand}, room=room, include_self=False)
 
+@socketio.on("webrtc-reject")
+def on_reject(data):
+    me = SIDS.get(request.sid); peer = str(data.get("peer",""))
+    if not me or not peer: return
+    room = conv_room(me, peer)
+    emit("webrtc-reject", {"from": me}, room=room, include_self=False)
+
 @socketio.on("disconnect")
 def on_disconnect():
     sid = request.sid
@@ -130,8 +136,7 @@ def on_disconnect():
         USERS.pop(num, None)
         emit("presence", {"number": num, "status": "offline"}, broadcast=True)
 
-# Development entry
+# Dev entry
 if __name__ == "__main__":
     app = create_app()
-    # Socket.IO dev server
     socketio.run(app, host="0.0.0.0", port=int(os.environ.get("PORT", 5000)), debug=True)
