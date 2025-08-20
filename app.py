@@ -4,7 +4,7 @@ from flask import Flask, render_template, jsonify, request
 from flask_socketio import SocketIO, emit, join_room, leave_room
 
 # Socket.IO server (CORS مفتوح كبداية؛ عدّله لاحقًا إلى دومينك)
-socketio = SocketIO(cors_allowed_origins="*", async_mode="eventlet")
+socketio = SocketIO(cors_allowed_origins="*", async_mode="gevent")
 
 USERS = {}          # number -> sid
 SIDS = {}           # sid -> number
