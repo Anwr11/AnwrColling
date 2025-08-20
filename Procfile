@@ -1,1 +1,1 @@
-web: gunicorn flask_app:app --workers=1 --threads=4 --timeout=120
+web: gunicorn flask_app:app --worker-class gevent --workers=1 --threads=4 --timeout=120
