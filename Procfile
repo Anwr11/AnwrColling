@@ -1,1 +1,1 @@
-web: gunicorn flask_app:app -k eventlet -w 1 --bind 0.0.0.0:$PORT
+web: gunicorn flask_app:app --workers=1 --threads=4 --timeout=120
