@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>اتصال بسيط</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://cdn.jsdelivr.net/npm/daisyui@4.7.3/dist/full.min.css" rel="stylesheet" type="text/css" />
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+  <style>body{font-family:system-ui,-apple-system,"Noto Naskh Arabic","Cairo","Tajawal",sans-serif}</style>
+</head>
+<body class="bg-base-200 text-base-content min-h-screen">
+  <header class="navbar bg-base-100 shadow-sm sticky top-0 z-50">
+    <div class="container mx-auto px-4 flex items-center justify-between">
+      <a href="/" class="btn btn-ghost text-xl">📞 اتصال بسيط</a>
+      <nav class="flex gap-2">
+        <button id="copyMyNumber" class="btn btn-ghost btn-sm">نسخ رقمي</button>
+        <a class="btn btn-primary btn-sm" href="#" id="shareLink">مشاركة</a>
+      </nav>
+    </div>
+  </header>
+  <main class="container mx-auto px-4 py-6">
+    {% block content %}{% endblock %}
+  </main>
+  <footer class="container mx-auto px-4 pb-10 opacity-70 text-sm">
+    <p>هذا نموذج أولي تجريبي للتواصل النصي والمكالمات الصوتية عبر المتصفح (WebRTC).</p>
+  </footer>
+  <script src="/static/app.js"></script>
+</body>
+</html>
