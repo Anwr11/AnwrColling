@@ -2,90 +2,43 @@
 <html lang="ar" dir="rtl">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>Colling Chat</title>
-  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/styles.css" />
-  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js" crossorigin="anonymous"></script>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
+  <title>Colling Luxe</title>
+  <link rel="stylesheet" href="/static/luxe.css" />
 </head>
 <body>
-  <div id="app" class="app">
-    <aside class="sidebar" id="sidebar">
-      <div class="brand">
-        <div class="logo">⚡️</div>
-        <div>
-          <div class="brand-title">Colling</div>
-          <div class="brand-sub">محادثات فورية</div>
-        </div>
+  <div class="app">
+    <header class="topbar glass">
+      <h1 id="chat-title">لا توجد محادثة</h1>
+      <div class="actions">
+        <button id="mute-btn">🔇</button>
+        <button id="call-btn">📞</button>
+        <button id="end-btn">❌</button>
+        <button id="theme-btn">🌗</button>
+        <button id="menu-btn">☰</button>
       </div>
-
-      <div class="me-card">
-        <div class="me-label">رقمي</div>
-        <div class="me-number" id="meNumber">•••••••••</div>
-        <button id="copyMyNumber" class="btn small full">نسخ الرقم</button>
-      </div>
-
-      <div class="new-chat">
-        <input id="peerInput" class="input" placeholder="رقم الطرف الآخر" inputmode="numeric" />
-        <button id="startChatBtn" class="btn primary full">بدء محادثة</button>
-      </div>
-
-      <div class="side-tools">
-        <button id="toggleTheme" class="btn small">🌙 / ☀️</button>
-        <button id="dndBtn" class="btn small">عدم الإزعاج</button>
-      </div>
-
-      <div class="list-title">المحادثات</div>
-      <ul id="chatList" class="chat-list"></ul>
-
-      <div class="dev-card">
-        <div class="dev-title">المطوّر</div>
-        <div class="dev-name">أنور البحراني</div>
-        <a class="dev-phone" href="tel:774557377">774557377</a>
-      </div>
+    </header>
+    <aside id="drawer" class="drawer glass hidden">
+      <h2>المحادثات</h2>
+      <ul id="chat-list"></ul>
     </aside>
-
-    <main class="main">
-      <header class="topbar">
-        <button id="menuBtn" class="btn ico only-mobile" aria-label="قائمة">☰</button>
-        <div class="peer-head">
-          <div class="peer-name" id="peerTitle">لا توجد محادثة</div>
-          <div class="peer-sub" id="peerSub">اختر محادثة من القائمة</div>
-        </div>
-        <div class="top-actions">
-          <button id="callBtn" class="btn ico" title="اتصال صوتي">📞</button>
-          <button id="muteBtn" class="btn ico" title="كتم/إلغاء كتم">🔇</button>
-          <button id="endCallBtn" class="btn ico danger" title="إنهاء المكالمة">🛑</button>
-        </div>
-      </header>
-
-      <section id="messages" class="messages" aria-live="polite"></section>
-
-      <footer class="composer">
-        <input id="msgBox" class="input flex" placeholder="اكتب رسالتك..." />
-        <button id="sendBtn" class="btn primary">إرسال</button>
-      </footer>
-    </main>
-  </div>
-
-  <!-- Overlay for sidebar on mobile -->
-  <div id="overlay" class="overlay"></div>
-
-  <!-- Modal: Incoming Call -->
-  <div id="incomingModal" class="modal hidden">
-    <div class="modal-card">
-      <div class="modal-title">📞 مكالمة واردة</div>
-      <div id="incomingFrom" class="modal-sub"></div>
-      <div class="modal-actions">
-        <button id="acceptCall" class="btn primary">قبول</button>
-        <button id="declineCall" class="btn danger">رفض</button>
+    <main id="chat-window" class="chat-window glass">
+      <div id="messages"></div>
+      <div class="composer">
+        <input type="text" id="message-input" placeholder="اكتب رسالتك..." />
+        <button id="send-btn">➤</button>
       </div>
-    </div>
+    </main>
+    <button id="fab">＋</button>
   </div>
 
-  <!-- Toast -->
-  <div id="toast" class="toast" role="status"></div>
+  <!-- Modal للمكالمات -->
+  <div id="call-modal" class="modal hidden glass">
+    <p>مكالمة واردة</p>
+    <button id="accept-call">✅ قبول</button>
+    <button id="reject-call">❌ رفض</button>
+  </div>
 
-  <script src="/static/app.js"></script>
+  <script src="/static/luxe.js"></script>
 </body>
 </html>
