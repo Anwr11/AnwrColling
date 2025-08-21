@@ -1,15 +1,11 @@
-
-// === Socket.IO ===
 const socket = io({ transports: ['websocket', 'polling'] });
 let myNumber = null;
 let currentPeer = null;
 let currentRoom = null;
 
-// محادثات متعددة
-const chatHistory = {};   // {peer: [{who:'me'|'peer'|'system', text, ts}, ...]}
-const recentPeers = new Set();
+const chatHistory = {};
+let recentPeers = [];
 
-// فيديو
 const localVideo = document.getElementById('localVideo');
 const remoteVideo = document.getElementById('remoteVideo');
 let pc = null;
@@ -23,6 +19,7 @@ const chatArea = el('chatArea');
 function pushMsg(peer, who, text){
   if(!chatHistory[peer]) chatHistory[peer] = [];
   chatHistory[peer].push({who, text, ts: Date.now()});
+  if (chatHistory[peer].length > 100) chatHistory[peer].shift();
   if (peer === currentPeer) renderChat(peer);
 }
 
@@ -49,7 +46,8 @@ function renderChat(peer){
 function renderRecents(){
   const list = el('recentList');
   list.innerHTML = '';
-  Array.from(recentPeers).forEach(p => {
+  const recents = recentPeers.slice(-20);
+  recents.forEach(p => {
     const li = document.createElement('li');
     const a = document.createElement('a');
     a.textContent = p;
@@ -62,10 +60,16 @@ function renderRecents(){
 
 function getStoredNumber(){ try { return localStorage.getItem('myNumber'); } catch(e){ return null; } }
 function setStoredNumber(n){ try { localStorage.setItem('myNumber', n); } catch(e){} }
+function clearStoredNumber(){ try { localStorage.removeItem('myNumber'); } catch(e){} }
+
+function validNumber(n){
+  return typeof n === 'string' && n.startsWith('33') && n.length === 9 && /^\d+$/.test(n);
+}
 
 async function ensureNumber(){
-  let n = getStoredNumber();
-  if (!n){
+  const forceNew = new URLSearchParams(location.search).get('new') === '1';
+  let n = forceNew ? null : getStoredNumber();
+  if (!validNumber(n)) {
     const r = await fetch('/alloc'); const j = await r.json(); n = j.number; setStoredNumber(n);
   }
   myNumber = n;
@@ -89,29 +93,33 @@ async function ensurePC(){
 }
 async function ensureLocalStream(video=true){
   if (localStream) return localStream;
-  localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video });
+  localStream = await navigator.mediaDevices.getUserMedia({
+    audio: { echoCancellation: true, noiseSuppression: true },
+    video: video ? { width: { max: 640 }, height: { max: 360 }, frameRate: { max: 15 } } : false
+  });
   localVideo.srcObject = localStream;
   return localStream;
 }
 function endCall(){
-  if (pc){
-    try { pc.getSenders().forEach(s => s.track && s.track.stop()); } catch(e){}
-    try { pc.close(); } catch(e){}
-    pc = null;
-  }
-  if (localStream){
-    try { localStream.getTracks().forEach(t => t.stop()); } catch(e){}
-    localStream = null;
-  }
-  if (currentPeer) pushMsg(currentPeer, 'system', '☎️ تم إنهاء المكالمة');
+  try {
+    if (pc){
+      try { pc.getSenders().forEach(s => s.track && s.track.stop()); } catch(e){}
+      try { pc.close(); } catch(e){}
+      pc = null;
+    }
+    if (localStream){
+      try { localStream.getTracks().forEach(t => t.stop()); } catch(e){}
+      localStream = null;
+    }
+    if (currentPeer) pushMsg(currentPeer, 'system', '☎️ تم إنهاء المكالمة');
+  } catch(e){}
 }
 
-// Actions
 async function startChat(){
   const peer = el('peerInput').value.trim();
   if (!peer) return;
   currentPeer = peer;
-  recentPeers.add(peer);
+  if (!recentPeers.includes(peer)) recentPeers.push(peer);
   renderRecents();
   socket.emit('start_chat', { peer });
   pushMsg(peer, 'system', `بدأت محادثة مع ${peer}`);
@@ -137,7 +145,6 @@ async function startVideoCall(){
   pushMsg(currentPeer, 'system', '📹 جارٍ الاتصال…');
 }
 
-// قبول/رفض
 function showIncoming(from){
   el('callerNum').textContent = from;
   const modal = document.getElementById('callModal');
@@ -164,7 +171,6 @@ function showIncoming(from){
   };
 }
 
-// Socket events
 socket.on('connect', () => {});
 socket.on('registered', d => {});
 socket.on('system', p => pushMsg(currentPeer || 'system', 'system', p.text));
@@ -177,7 +183,8 @@ socket.on('message', p => {
 });
 
 socket.on('webrtc-offer', async ({from, sdp}) => {
-  recentPeers.add(from); renderRecents();
+  if (!recentPeers.includes(from)) recentPeers.push(from);
+  renderRecents();
   window.__lastOffer = {from, sdp};
   showIncoming(from);
 });
@@ -206,4 +213,13 @@ window.addEventListener('DOMContentLoaded', async () => {
   el('msgInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') sendMsg(); });
   el('callBtn').onclick = startVideoCall;
   el('endCallBtn').onclick = endCall;
+
+  const refresh = document.getElementById('refreshNumber');
+  if (refresh){
+    refresh.onclick = async () => {
+      clearStoredNumber();
+      await ensureNumber();
+      socket.emit('register', { number: myNumber });
+    };
+  }
 });
