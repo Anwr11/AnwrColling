@@ -1,0 +1,37 @@
+
+:root{
+  --bg:#0b1020;
+  --panel:#111936;
+  --muted:#9fb0d8;
+  --text:#e7ecff;
+  --primary:#7cafff;
+  --accent:#00e0b8;
+  --danger:#ff6b6b;
+}
+*{box-sizing:border-box}
+body{margin:0;background:linear-gradient(180deg,#0b1020,#0c1430);color:var(--text);font-family:ui-sans-serif,system-ui,Segoe UI,Roboto}
+.container{max-width:1100px;margin:0 auto;padding:16px}
+.header{display:flex;justify-content:space-between;align-items:center;padding:14px 0}
+.brand{font-weight:700;letter-spacing:.4px}
+.panel{background:var(--panel);border:1px solid #202c55;border-radius:16px;box-shadow:0 10px 30px #0005;padding:16px}
+.grid{display:grid;grid-template-columns:300px 1fr;gap:16px}
+@media(max-width:900px){.grid{grid-template-columns:1fr}}
+.btn{border:0;border-radius:12px;padding:10px 14px;cursor:pointer;font-weight:600}
+.btn-primary{background:var(--primary);color:#001228}
+.btn-accent{background:var(--accent);color:#00181a}
+.btn-danger{background:var(--danger);color:#2a0000}
+.input{width:100%;background:#0a1130;border:1px solid #233063;border-radius:12px;color:var(--text);padding:10px 12px}
+.menu{list-style:none;margin:0;padding:0;max-height:420px;overflow:auto}
+.menu li a{display:block;padding:10px;border-radius:10px;color:var(--text);text-decoration:none;border:1px solid transparent}
+.menu li a:hover{background:#0a1330;border-color:#223064}
+.chat{height:360px;overflow:auto;border:1px solid #223064;border-radius:14px;padding:12px;background:#0a1130}
+.bubble{max-width:70%;padding:10px 12px;border-radius:14px;margin:6px 0;display:inline-block}
+.me{background:linear-gradient(135deg,#7cafff,#4bc9ff);color:#061022;float:right;clear:both}
+.peer{background:#18224a;border:1px solid #2b3c78;float:left;clear:both}
+.kv{opacity:.8;font-size:13px}
+.videos{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px}
+video{width:100%;height:220px;background:#000;border-radius:12px;border:1px solid #223064}
+.modal{position:fixed;inset:0;background:#0008;display:none;align-items:center;justify-content:center}
+.modal .box{background:var(--panel);padding:20px;border-radius:16px;border:1px solid #223064;max-width:420px;width:92%}
+.toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:#0a1330;border:1px solid #223064;border-radius:12px;padding:10px 14px;display:none}
+footer{opacity:.85;text-align:center;margin:24px 0}
