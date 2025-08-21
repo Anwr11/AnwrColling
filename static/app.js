@@ -1,225 +1,52 @@
-const socket = io({ transports: ['websocket', 'polling'] });
-let myNumber = null;
-let currentPeer = null;
-let currentRoom = null;
+let socket = io();
+let pc;
+let localStream;
 
-const chatHistory = {};
-let recentPeers = [];
-
-const localVideo = document.getElementById('localVideo');
-const remoteVideo = document.getElementById('remoteVideo');
-let pc = null;
-let localStream = null;
-
-const RTC_CONFIG = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
-
-function el(id){ return document.getElementById(id); }
-const chatArea = el('chatArea');
-
-function pushMsg(peer, who, text){
-  if(!chatHistory[peer]) chatHistory[peer] = [];
-  chatHistory[peer].push({who, text, ts: Date.now()});
-  if (chatHistory[peer].length > 100) chatHistory[peer].shift();
-  if (peer === currentPeer) renderChat(peer);
+function joinRoom() {
+    let room = document.getElementById('room').value;
+    socket.emit('join', {room: room, user: 'مستخدم'});
+    socket.on('status', data => {
+        document.getElementById('status').innerText = data.msg;
+    });
+    socket.on('signal', async (data) => {
+        if (data.type === 'offer') {
+            await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
+            let answer = await pc.createAnswer();
+            await pc.setLocalDescription(answer);
+            socket.emit('signal', {room: room, type:'answer', answer: answer});
+        } else if (data.type === 'answer') {
+            await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
+        } else if (data.type === 'candidate') {
+            try { await pc.addIceCandidate(data.candidate); } catch(e){}
+        }
+    });
 }
 
-function renderChat(peer){
-  el('peerInput').value = peer || '';
-  chatArea.innerHTML = '';
-  (chatHistory[peer] || []).forEach(m => {
-    if (m.who === 'system'){
-      const div = document.createElement('div');
-      div.className = 'kv';
-      div.style.textAlign = 'center';
-      div.textContent = m.text;
-      chatArea.appendChild(div);
-    } else {
-      const wrap = document.createElement('div');
-      wrap.className = 'bubble ' + (m.who === 'me' ? 'me' : 'peer');
-      wrap.textContent = m.text;
-      chatArea.appendChild(wrap);
-    }
-  });
-  chatArea.scrollTop = chatArea.scrollHeight;
-}
-
-function renderRecents(){
-  const list = el('recentList');
-  list.innerHTML = '';
-  const recents = recentPeers.slice(-20);
-  recents.forEach(p => {
-    const li = document.createElement('li');
-    const a = document.createElement('a');
-    a.textContent = p;
-    a.href = '#';
-    a.onclick = (e)=>{e.preventDefault(); el('peerInput').value = p; startChat();};
-    li.appendChild(a);
-    list.appendChild(li);
-  });
-}
-
-function getStoredNumber(){ try { return localStorage.getItem('myNumber'); } catch(e){ return null; } }
-function setStoredNumber(n){ try { localStorage.setItem('myNumber', n); } catch(e){} }
-function clearStoredNumber(){ try { localStorage.removeItem('myNumber'); } catch(e){} }
-
-function validNumber(n){
-  return typeof n === 'string' && n.startsWith('33') && n.length === 9 && /^\d+$/.test(n);
-}
-
-async function ensureNumber(){
-  const forceNew = new URLSearchParams(location.search).get('new') === '1';
-  let n = forceNew ? null : getStoredNumber();
-  if (!validNumber(n)) {
-    const r = await fetch('/alloc'); const j = await r.json(); n = j.number; setStoredNumber(n);
-  }
-  myNumber = n;
-  el('myNumber').textContent = n;
-}
-
-async function ensurePC(){
-  if (pc) return pc;
-  pc = new RTCPeerConnection(RTC_CONFIG);
-  pc.onicecandidate = (e) => {
-    if (e.candidate && currentPeer){
-      socket.emit('webrtc-ice', { peer: currentPeer, candidate: e.candidate });
-    }
-  };
-  pc.ontrack = (e) => { remoteVideo.srcObject = e.streams[0]; };
-  pc.onconnectionstatechange = () => {
-    const st = pc.connectionState;
-    if (['disconnected','failed','closed'].includes(st)) endCall();
-  };
-  return pc;
-}
-async function ensureLocalStream(video=true){
-  if (localStream) return localStream;
-  localStream = await navigator.mediaDevices.getUserMedia({
-    audio: { echoCancellation: true, noiseSuppression: true },
-    video: video ? { width: { max: 640 }, height: { max: 360 }, frameRate: { max: 15 } } : false
-  });
-  localVideo.srcObject = localStream;
-  return localStream;
-}
-function endCall(){
-  try {
-    if (pc){
-      try { pc.getSenders().forEach(s => s.track && s.track.stop()); } catch(e){}
-      try { pc.close(); } catch(e){}
-      pc = null;
-    }
-    if (localStream){
-      try { localStream.getTracks().forEach(t => t.stop()); } catch(e){}
-      localStream = null;
-    }
-    if (currentPeer) pushMsg(currentPeer, 'system', '☎️ تم إنهاء المكالمة');
-  } catch(e){}
-}
-
-async function startChat(){
-  const peer = el('peerInput').value.trim();
-  if (!peer) return;
-  currentPeer = peer;
-  if (!recentPeers.includes(peer)) recentPeers.push(peer);
-  renderRecents();
-  socket.emit('start_chat', { peer });
-  pushMsg(peer, 'system', `بدأت محادثة مع ${peer}`);
-  renderChat(peer);
-}
-
-async function sendMsg(){
-  const txt = el('msgInput').value.trim();
-  if (!txt || !currentPeer) return;
-  socket.emit('message', { peer: currentPeer, text: txt });
-  el('msgInput').value = '';
-  pushMsg(currentPeer, 'me', txt);
-}
-
-async function startVideoCall(){
-  if (!currentPeer){ toast('اختر رقمًا أولًا'); return; }
-  await ensurePC();
-  await ensureLocalStream(true);
-  localStream.getTracks().forEach(t => pc.addTrack(t, localStream));
-  const offer = await pc.createOffer();
-  await pc.setLocalDescription(offer);
-  socket.emit('webrtc-offer', { peer: currentPeer, sdp: offer });
-  pushMsg(currentPeer, 'system', '📹 جارٍ الاتصال…');
-}
-
-function showIncoming(from){
-  el('callerNum').textContent = from;
-  const modal = document.getElementById('callModal');
-  modal.style.display = 'flex';
-  el('acceptCall').onclick = async () => {
-    modal.style.display = 'none';
-    currentPeer = from;
-    await ensurePC();
-    await ensureLocalStream(true);
-    localStream.getTracks().forEach(t => pc.addTrack(t, localStream));
-    if (window.__lastOffer){
-      await pc.setRemoteDescription(new RTCSessionDescription(window.__lastOffer.sdp));
-      const answer = await pc.createAnswer();
-      await pc.setLocalDescription(answer);
-      socket.emit('webrtc-answer', { peer: window.__lastOffer.from, sdp: answer });
-      pushMsg(window.__lastOffer.from, 'system', '✅ تم قبول مكالمة الفيديو');
-      window.__lastOffer = null;
-    }
-  };
-  el('rejectCall').onclick = () => {
-    modal.style.display = 'none';
-    socket.emit('webrtc-reject', { peer: from });
-    pushMsg(from, 'system', '❌ تم رفض المكالمة');
-  };
-}
-
-socket.on('connect', () => {});
-socket.on('registered', d => {});
-socket.on('system', p => pushMsg(currentPeer || 'system', 'system', p.text));
-socket.on('chat_ready', p => { currentRoom = p.room; });
-
-socket.on('message', p => {
-  const who = (p.from === myNumber) ? 'me' : 'peer';
-  const peerKey = (who === 'peer') ? p.from : currentPeer;
-  pushMsg(peerKey, who, p.text);
-});
-
-socket.on('webrtc-offer', async ({from, sdp}) => {
-  if (!recentPeers.includes(from)) recentPeers.push(from);
-  renderRecents();
-  window.__lastOffer = {from, sdp};
-  showIncoming(from);
-});
-
-socket.on('webrtc-answer', async ({from, sdp}) => {
-  if (!pc) return;
-  await pc.setRemoteDescription(new RTCSessionDescription(sdp));
-  pushMsg(currentPeer, 'system', '✅ تم قبول مكالمة الفيديو');
-});
-
-socket.on('webrtc-reject', ({from}) => {
-  pushMsg(from, 'system', '🚫 الطرف الآخر رفض المكالمة');
-  endCall();
-});
-
-window.addEventListener('DOMContentLoaded', async () => {
-  await ensureNumber();
-  socket.emit('register', { number: myNumber });
-
-  const params = new URLSearchParams(location.search);
-  const to = params.get('to');
-  if (to){ el('peerInput').value = to; startChat(); }
-
-  el('startChat').onclick = startChat;
-  el('sendBtn').onclick = sendMsg;
-  el('msgInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') sendMsg(); });
-  el('callBtn').onclick = startVideoCall;
-  el('endCallBtn').onclick = endCall;
-
-  const refresh = document.getElementById('refreshNumber');
-  if (refresh){
-    refresh.onclick = async () => {
-      clearStoredNumber();
-      await ensureNumber();
-      socket.emit('register', { number: myNumber });
+async function startCall() {
+    let room = document.getElementById('room').value;
+    pc = new RTCPeerConnection();
+    localStream = await navigator.mediaDevices.getUserMedia({audio:true, video:false});
+    localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+    pc.onicecandidate = (event) => {
+        if (event.candidate) {
+            socket.emit('signal', {room: room, type:'candidate', candidate: event.candidate});
+        }
     };
-  }
-});
+    pc.ontrack = (event) => {
+        let audio = document.createElement('audio');
+        audio.srcObject = event.streams[0];
+        audio.autoplay = true;
+        document.body.appendChild(audio);
+    };
+    let offer = await pc.createOffer();
+    await pc.setLocalDescription(offer);
+    socket.emit('signal', {room: room, type:'offer', offer: offer});
+}
+
+function endCall() {
+    if (pc) {
+        pc.close();
+        pc = null;
+        document.getElementById('status').innerText = "تم إنهاء المكالمة.";
+    }
+}
