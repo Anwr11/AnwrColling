@@ -294,3 +294,18 @@
     socket.connect();
   })();
 })();
+
+// --- Mobile sidebar toggle & overlay ---
+(() => {
+  const sidebar = document.getElementById("sidebar");
+  const menuBtn = document.getElementById("menuBtn");
+  const overlay = document.getElementById("overlay");
+  if (menuBtn && sidebar && overlay) {
+    const toggle = () => {
+      sidebar.classList.toggle("open");
+      overlay.classList.toggle("show");
+    };
+    menuBtn.addEventListener("click", toggle);
+    overlay.addEventListener("click", toggle);
+  }
+})();
