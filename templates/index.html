@@ -1,26 +1,25 @@
-{% raw %}<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
-  <title>Colling • Luxe</title>
+  <title>Colling • Dark</title>
   <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;700;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/luxe.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/dark.css') }}">
   <script src="https://cdn.socket.io/4.7.2/socket.io.min.js" crossorigin="anonymous"></script>
 </head>
 <body>
-  <div class="bg-orbs"></div>
   <div class="app">
     <header class="topbar glass">
-      <button id="menuBtn" class="ico-btn only-mobile" aria-label="قائمة">☰</button>
+      <button id="menuBtn" class="ico only-mobile" aria-label="قائمة">☰</button>
       <div class="head">
         <div id="peerTitle" class="title">لا توجد محادثة</div>
         <div id="peerSub" class="sub">اختر محادثة من القائمة</div>
       </div>
       <div class="actions">
-        <button id="muteBtn" class="ico-btn" title="كتم">🔇</button>
-        <button id="callBtn" class="ico-btn" title="اتصال">📞</button>
-        <button id="endCallBtn" class="ico-btn danger" title="إنهاء">🛑</button>
+        <button id="muteBtn" class="btn ico">🔇</button>
+        <button id="callBtn" class="btn ico">📞</button>
+        <button id="endCallBtn" class="btn ico danger">🛑</button>
       </div>
     </header>
 
@@ -37,9 +36,9 @@
         <div class="label">رقمي</div>
         <div id="meNumber" class="mono">•••••••••</div>
         <div class="row">
-          <button id="copyMyNumber" class="btn subtle">نسخ</button>
-          <button id="toggleTheme" class="btn subtle">ثيم</button>
-          <button id="dndBtn" class="btn subtle">عدم إزعاج</button>
+          <button id="copyMyNumber" class="btn small">نسخ</button>
+          <button id="toggleTheme" class="btn small">ثيم</button>
+          <button id="dndBtn" class="btn small">عدم إزعاج</button>
         </div>
       </section>
 
@@ -99,6 +98,6 @@
 
   <div id="toast" class="toast">تم</div>
 
-  <script src="{{ url_for('static', filename='js/luxe.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/app.js') }}"></script>
 </body>
-</html>{% endraw %}
+</html>
