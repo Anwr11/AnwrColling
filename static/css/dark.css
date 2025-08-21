@@ -77,6 +77,11 @@ body{margin:0;font-family:"Cairo",system-ui,Segoe UI,Roboto,Arial;color:var(--fg
   .only-mobile{display:inline-grid}
   .topbar{top:12px}
   .main{min-height:calc(100dvh - 24px)}
-  .messages{padding:10px}
+ .messages {
+  padding: 10px;
+  max-height: 70vh;       /* يخلي الرسائل محصورة بارتفاع 70% من الشاشة */
+  overflow-y: auto;       /* يضيف شريط تمرير */
+  scroll-behavior: smooth; /* تمرير ناعم */
+}
   .composer{padding-inline:10px}
 }
