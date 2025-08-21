@@ -1,11 +1,11 @@
-<!DOCTYPE html>
+{% raw %}<!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
   <title>Colling • Luxe</title>
   <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;700;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/css/luxe.css" />
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/luxe.css') }}">
   <script src="https://cdn.socket.io/4.7.2/socket.io.min.js" crossorigin="anonymous"></script>
 </head>
 <body>
@@ -18,9 +18,9 @@
         <div id="peerSub" class="sub">اختر محادثة من القائمة</div>
       </div>
       <div class="actions">
-        <button id="muteBtn" class="ico-btn">🔇</button>
-        <button id="callBtn" class="ico-btn">📞</button>
-        <button id="endCallBtn" class="ico-btn danger">🛑</button>
+        <button id="muteBtn" class="ico-btn" title="كتم">🔇</button>
+        <button id="callBtn" class="ico-btn" title="اتصال">📞</button>
+        <button id="endCallBtn" class="ico-btn danger" title="إنهاء">🛑</button>
       </div>
     </header>
 
@@ -99,6 +99,6 @@
 
   <div id="toast" class="toast">تم</div>
 
-  <script src="/static/js/luxe.js"></script>
+  <script src="{{ url_for('static', filename='js/luxe.js') }}"></script>
 </body>
-</html>
+</html>{% endraw %}
