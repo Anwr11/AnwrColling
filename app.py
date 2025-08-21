@@ -131,7 +131,8 @@ def on_disconnect():
         emit("presence", {"number": num, "status": "offline"}, broadcast=True)
 
 # Development entry
+app = create_app()  # متاح لـ gunicorn
+
 if __name__ == "__main__":
-    app = create_app()
-    # Socket.IO dev server
+    # تشغيل محلي فقط
     socketio.run(app, host="0.0.0.0", port=int(os.environ.get("PORT", 5000)), debug=True)
