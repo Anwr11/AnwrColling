@@ -19,6 +19,7 @@
   const sidebar = $("#sidebar");
   const overlay = $("#overlay");
   const fab = $("#fab");
+  const exitChatBtn = $("#exitChat");
 
   const incomingModal = $("#incomingModal");
   const incomingFrom = $("#incomingFrom");
@@ -40,6 +41,16 @@
       li.onclick = () => switchPeer(p);
       chatList.appendChild(li);
     }
+  };
+
+  const clearMessagesUI = () => {
+    messagesEl.innerHTML = "";
+    const sys = document.createElement("div");
+    sys.className = "bubble system";
+    sys.textContent = "لا توجد محادثة — اختر محادثة من القائمة";
+    messagesEl.appendChild(sys);
+    peerTitle.textContent = "لا توجد محادثة";
+    peerSub.textContent = "اختر محادثة من القائمة";
   };
 
   const switchPeer = (p) => {
@@ -99,9 +110,19 @@
   muteBtn.onclick = ()=>{ if(!state.localStream) return; state.muted=!state.muted; state.localStream.getAudioTracks().forEach(t=>t.enabled=!state.muted); showToast(state.muted?"تم الكتم":"تم إلغاء الكتم"); };
   callBtn.onclick = startCall; endCallBtn.onclick = endCall;
 
+  // Exit current chat
+  exitChatBtn.onclick = () => {
+    if (state.peer) {
+      try { socket.emit("leave_chat", { peer: state.peer }); } catch {}
+    }
+    state.peer = null;
+    clearMessagesUI();
+    sidebar.classList.add("open"); overlay.classList.add("show"); // show list to pick another
+  };
+
   // drawer
   const toggleDrawer = ()=>{ sidebar.classList.toggle("open"); overlay.classList.toggle("show"); };
-  menuBtn.onclick = toggleDrawer; overlay.onclick = toggleDrawer; $("#fab").onclick = toggleDrawer;
+  menuBtn.onclick = toggleDrawer; overlay.onclick = toggleDrawer; if (fab) fab.onclick = toggleDrawer;
 
   // boot
   (async ()=>{
@@ -109,6 +130,7 @@
     if(!state.me){ const r=await fetch("/alloc"); const j=await r.json(); state.me=j.number; saveLocal(); }
     meNumberEl.textContent = state.me;
     renderChatList();
+    clearMessagesUI();
     socket.connect();
   })();
 
