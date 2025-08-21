@@ -1,7 +1,0 @@
-services:
-  - type: web
-    name: rtc-chat-portal-ar
-    env: python
-    buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn wsgi:app -k eventlet -w 1 -b 0.0.0.0:$PORT
-    autoDeploy: true
