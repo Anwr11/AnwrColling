@@ -1,1 +1,1 @@
-web: gunicorn wsgi:app -w 1 -b 0.0.0.0:$PORT --timeout 120
+web: gunicorn wsgi:app --workers=1 --threads=2 --timeout 120 --log-level warning

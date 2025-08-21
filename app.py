@@ -1,4 +1,3 @@
-
 # -*- coding: utf-8 -*-
 import os, time, random
 from flask import Flask, render_template, jsonify, request
@@ -8,16 +7,16 @@ NUMBER_PREFIX = os.getenv("NUMBER_PREFIX", "33")
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "dev-secret")
+app.config["ENV"] = "production"
+app.config["DEBUG"] = False
 
-# نستخدم threading لتجنب مشاكل eventlet/gevent في الاستضافة المجانية
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading")
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading", logger=False, engineio_logger=False)
 
-USERS = {}          # number -> sid
-SIDS = {}           # sid -> number
-CONNS = {}          # room_id -> set(numbers)
+USERS = {}
+SIDS = {}
+CONNS = {}
 
 def make_number():
-    # يبدأ بـ 33 + سبعة أرقام
     rest = "".join(random.choice("0123456789") for _ in range(7))
     return f"{NUMBER_PREFIX}{rest}"
 
@@ -39,7 +38,6 @@ def alloc():
 def healthz():
     return jsonify({"ok": True, "ts": time.time()})
 
-# -------- Socket.IO Events --------
 @socketio.on("connect")
 def on_connect():
     emit("server_info", {"msg": "connected", "sid": request.sid})
@@ -53,7 +51,6 @@ def on_register(data):
     SIDS[request.sid] = num
     join_room(f"user:{num}")
     emit("registered", {"number": num})
-    emit("presence", {"number": num, "status": "online"}, broadcast=True)
 
 @socketio.on("start_chat")
 def on_start_chat(data):
@@ -91,14 +88,12 @@ def on_message(data):
     payload = {"from": me, "text": text, "ts": time.time()}
     emit("message", payload, room=room)
 
-# ----- WebRTC signaling -----
 @socketio.on("webrtc-offer")
 def on_offer(data):
     me = SIDS.get(request.sid); peer = str(data.get("peer",""))
     sdp = data.get("sdp")
     if not me or not peer or not sdp: return
     room = conv_room(me, peer)
-    # نرسل العرض للطرف الآخر (سيتلقى شاشة قبول/رفض)
     emit("webrtc-offer", {"from": me, "sdp": sdp}, room=room, include_self=False)
 
 @socketio.on("webrtc-answer")
@@ -130,7 +125,6 @@ def on_disconnect():
     num = SIDS.pop(sid, None)
     if num:
         USERS.pop(num, None)
-        emit("presence", {"number": num, "status": "offline"}, broadcast=True)
 
 if __name__ == "__main__":
-    socketio.run(app, host="0.0.0.0", port=int(os.getenv("PORT", 5000)), debug=True)
+    socketio.run(app, host="0.0.0.0", port=int(os.getenv("PORT", 5000)))
