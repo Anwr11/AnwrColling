@@ -61,15 +61,36 @@
     } catch{}
   };
 
+  // ======== قائمة المحادثات + زر الخروج كآخر عنصر ========
   const renderChatList = () => {
     chatList.innerHTML = "";
+
+    // المحادثات المحفوظة
     for (const [p, meta] of state.chats.entries()) {
       const li = document.createElement("li");
-      li.className = "chat-item" + (state.peer===p?" active":"");
-      li.innerHTML = `<span class="status-dot ${meta.online?'status-online':''}"></span><span>${p}${meta.unread?` (${meta.unread})`:''}</span>`;
+      li.className = "chat-item" + (state.peer === p ? " active" : "");
+      li.innerHTML =
+        `<span class="status-dot ${meta.online ? "status-online" : ""}"></span>` +
+        `<span>${p}${meta.unread ? ` (${meta.unread})` : ""}</span>`;
       li.onclick = () => switchPeer(p);
       chatList.appendChild(li);
     }
+
+    // عنصر الخروج كآخر عنصر في القائمة
+    const exitItem = document.createElement("li");
+    exitItem.className = "chat-item exit" + (!state.peer ? " disabled" : "");
+    exitItem.innerHTML =
+      `<span class="exit-ico">🚪</span>` +
+      `<span>${state.peer ? "الخروج من المحادثة الحالية" : "لا توجد محادثة للخروج"}</span>`;
+
+    exitItem.onclick = () => {
+      if (!state.peer) return;                 // لا يعمل إن لم تكن داخل محادثة
+      try { socket.emit("leave_chat", { peer: state.peer }); } catch {}
+      state.peer = null;
+      exitToList();                             // نفس دالة الخروج المعتادة
+    };
+
+    chatList.appendChild(exitItem);
   };
 
   const clearMessagesUI = () => {
@@ -209,6 +230,14 @@
   });
 
   // ======== actions ========
+  const exitToList = () => {
+    clearMessagesUI();
+    sidebar.classList.add("open");
+    overlay.classList.add("show");
+    showToast("تم الخروج من المحادثة",{center:true});
+    renderChatList(); // ← حدّث القائمة عشان زر الخروج يتعطل إذا ما في محادثة
+  };
+
   sendBtn.onclick = () => {
     const text = msgBox.value.trim();
     if(!text||!state.peer) return;
@@ -248,20 +277,14 @@
   };
   callBtn.onclick = startCall; endCallBtn.onclick = endCall;
 
-  // ======== Exit current chat ========
-  const exitToList = () => {
-    clearMessagesUI();
-    sidebar.classList.add("open");
-    overlay.classList.add("show");
-    showToast("تم الخروج من المحادثة",{center:true});
-  };
-  exitChatBtn.onclick = () => {
+  // ======== Exit current chat (زر الموجود فوق الكومبوزر إن كان موجود) ========
+  exitChatBtn && (exitChatBtn.onclick = () => {
     if (state.peer) {
       try { socket.emit("leave_chat", { peer: state.peer }); } catch {}
     }
     state.peer = null;
     exitToList();
-  };
+  });
 
   // ======== drawer ========
   const toggleDrawer = ()=>{
