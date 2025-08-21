@@ -2,17 +2,15 @@
 <html lang="ar" dir="rtl">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>Colling Chat</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/styles.css" />
-  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js" integrity="sha384-oiK6v5BtS8cQvHc1f1WrfX7o4mG9h6c9EwqTQw5XhFf4Z8qvWlCz6GvKcWQZ1rjP" crossorigin="anonymous"></script>
+  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js" crossorigin="anonymous"></script>
 </head>
 <body>
   <div id="app" class="app">
-    <aside class="sidebar">
+    <aside class="sidebar" id="sidebar">
       <div class="brand">
         <div class="logo">⚡️</div>
         <div>
@@ -24,12 +22,12 @@
       <div class="me-card">
         <div class="me-label">رقمي</div>
         <div class="me-number" id="meNumber">•••••••••</div>
-        <button id="copyMyNumber" class="btn small">نسخ الرقم</button>
+        <button id="copyMyNumber" class="btn small full">نسخ الرقم</button>
       </div>
 
       <div class="new-chat">
         <input id="peerInput" class="input" placeholder="رقم الطرف الآخر" inputmode="numeric" />
-        <button id="startChatBtn" class="btn primary">بدء محادثة</button>
+        <button id="startChatBtn" class="btn primary full">بدء محادثة</button>
       </div>
 
       <div class="side-tools">
@@ -49,7 +47,8 @@
 
     <main class="main">
       <header class="topbar">
-        <div>
+        <button id="menuBtn" class="btn ico only-mobile" aria-label="قائمة">☰</button>
+        <div class="peer-head">
           <div class="peer-name" id="peerTitle">لا توجد محادثة</div>
           <div class="peer-sub" id="peerSub">اختر محادثة من القائمة</div>
         </div>
@@ -60,7 +59,7 @@
         </div>
       </header>
 
-      <section id="messages" class="messages"></section>
+      <section id="messages" class="messages" aria-live="polite"></section>
 
       <footer class="composer">
         <input id="msgBox" class="input flex" placeholder="اكتب رسالتك..." />
@@ -68,6 +67,9 @@
       </footer>
     </main>
   </div>
+
+  <!-- Overlay for sidebar on mobile -->
+  <div id="overlay" class="overlay"></div>
 
   <!-- Modal: Incoming Call -->
   <div id="incomingModal" class="modal hidden">
@@ -82,7 +84,7 @@
   </div>
 
   <!-- Toast -->
-  <div id="toast" class="toast"></div>
+  <div id="toast" class="toast" role="status"></div>
 
   <script src="/static/app.js"></script>
 </body>
