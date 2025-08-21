@@ -2,43 +2,96 @@
 <html lang="ar" dir="rtl">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
-  <title>Colling Luxe</title>
-  <link rel="stylesheet" href="/static/luxe.css" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
+  <title>Colling • Luxe</title>
+  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;700;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/css/luxe.css" />
+  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js" crossorigin="anonymous"></script>
 </head>
 <body>
+  <div class="bg-orbs"></div>
   <div class="app">
     <header class="topbar glass">
-      <h1 id="chat-title">لا توجد محادثة</h1>
+      <button id="menuBtn" class="ico-btn only-mobile" aria-label="قائمة">☰</button>
+      <div class="head">
+        <div id="peerTitle" class="title">لا توجد محادثة</div>
+        <div id="peerSub" class="sub">اختر محادثة من القائمة</div>
+      </div>
       <div class="actions">
-        <button id="mute-btn">🔇</button>
-        <button id="call-btn">📞</button>
-        <button id="end-btn">❌</button>
-        <button id="theme-btn">🌗</button>
-        <button id="menu-btn">☰</button>
+        <button id="muteBtn" class="ico-btn">🔇</button>
+        <button id="callBtn" class="ico-btn">📞</button>
+        <button id="endCallBtn" class="ico-btn danger">🛑</button>
       </div>
     </header>
-    <aside id="drawer" class="drawer glass hidden">
-      <h2>المحادثات</h2>
-      <ul id="chat-list"></ul>
-    </aside>
-    <main id="chat-window" class="chat-window glass">
-      <div id="messages"></div>
-      <div class="composer">
-        <input type="text" id="message-input" placeholder="اكتب رسالتك..." />
-        <button id="send-btn">➤</button>
+
+    <aside id="sidebar" class="sidebar glass">
+      <div class="brand">
+        <div class="logo">⚡</div>
+        <div>
+          <div class="name">Colling</div>
+          <div class="tag">محادثات فورية</div>
+        </div>
       </div>
+
+      <section class="card">
+        <div class="label">رقمي</div>
+        <div id="meNumber" class="mono">•••••••••</div>
+        <div class="row">
+          <button id="copyMyNumber" class="btn subtle">نسخ</button>
+          <button id="toggleTheme" class="btn subtle">ثيم</button>
+          <button id="dndBtn" class="btn subtle">عدم إزعاج</button>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="label">بدء محادثة</div>
+        <div class="row">
+          <input id="peerInput" class="input" placeholder="رقم الطرف الآخر" inputmode="numeric" />
+          <button id="startChatBtn" class="btn primary">ابدأ</button>
+        </div>
+      </section>
+
+      <div class="list-title">المحادثات</div>
+      <ul id="chatList" class="chat-list"></ul>
+
+      <section class="card dev">
+        <div class="label">المطوّر</div>
+        <div class="devbox">
+          <div>
+            <div class="devname">أنور البحراني</div>
+            <a class="devphone" href="tel:774557377">774557377</a>
+          </div>
+          <div class="badge">Pro</div>
+        </div>
+      </section>
+    </aside>
+
+    <main class="main">
+      <section id="messages" class="messages"></section>
+      <footer class="composer glass">
+        <input id="msgBox" class="input flex" placeholder="اكتب رسالتك..." />
+        <button id="sendBtn" class="btn primary big">إرسال</button>
+      </footer>
     </main>
-    <button id="fab">＋</button>
+
+    <button id="fab" class="fab only-mobile">＋</button>
   </div>
 
-  <!-- Modal للمكالمات -->
-  <div id="call-modal" class="modal hidden glass">
-    <p>مكالمة واردة</p>
-    <button id="accept-call">✅ قبول</button>
-    <button id="reject-call">❌ رفض</button>
+  <div id="overlay" class="overlay"></div>
+
+  <div id="incomingModal" class="modal">
+    <div class="modal-card glass">
+      <div class="m-title">📞 مكالمة واردة</div>
+      <div id="incomingFrom" class="m-sub"></div>
+      <div class="m-actions">
+        <button id="acceptCall" class="btn primary">قبول</button>
+        <button id="declineCall" class="btn danger">رفض</button>
+      </div>
+    </div>
   </div>
 
-  <script src="/static/luxe.js"></script>
+  <div id="toast" class="toast">تم</div>
+
+  <script src="/static/js/luxe.js"></script>
 </body>
 </html>
