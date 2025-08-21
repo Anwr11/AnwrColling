@@ -1,49 +1,22 @@
-{% extends 'base.html' %}
-{% block content %}
-<div class="panel">
-  <div class="grid">
-    <aside>
-      <h3>محادثاتي</h3>
-      <ul id="recentList" class="menu"></ul>
-    </aside>
-    <section>
-      <div class="kv">
-        رقمي: <b id="myNumber">—</b>
-        <button id="refreshNumber" class="btn btn-accent" style="margin-inline-start:10px">تحديث الرقم</button>
-      </div>
-      <div style="display:flex;gap:10px;margin:10px 0">
-        <input id="peerInput" class="input" placeholder="أدخل رقم يبدأ بـ 33">
-        <button id="startChat" class="btn btn-primary">بدء محادثة</button>
-      </div>
-      <div class="chat" id="chatArea"></div>
-      <div style="display:flex;gap:8px;margin-top:10px">
-        <input id="msgInput" class="input" placeholder="اكتب رسالة…">
-        <button id="sendBtn" class="btn btn-primary">إرسال</button>
-        <button id="callBtn" class="btn btn-accent">اتصال فيديو</button>
-        <button id="endCallBtn" class="btn btn-danger">إنهاء المكالمة</button>
-      </div>
-      <div class="videos">
-        <div>
-          <div class="kv">الكاميرا المحلية</div>
-          <video id="localVideo" autoplay playsinline muted></video>
-        </div>
-        <div>
-          <div class="kv">الطرف الآخر</div>
-          <video id="remoteVideo" autoplay playsinline></video>
-        </div>
-      </div>
-    </section>
-  </div>
-</div>
-
-<div id="callModal" class="modal">
-  <div class="box">
-    <h3>📞 مكالمة واردة</h3>
-    <p>يريد <b id="callerNum">—</b> الاتصال بك عبر الفيديو.</p>
-    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:10px">
-      <button id="acceptCall" class="btn btn-accent">قبول</button>
-      <button id="rejectCall" class="btn btn-danger">رفض</button>
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <title>مكالمات خفيفة</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <h2>مكالمات صوتية فقط</h2>
+    <div>
+        <input id="room" placeholder="أدخل رقم الغرفة">
+        <button onclick="joinRoom()">انضم</button>
     </div>
-  </div>
-</div>
-{% endblock %}
+    <div>
+        <button onclick="startCall()">بدء المكالمة</button>
+        <button onclick="endCall()">إنهاء المكالمة</button>
+    </div>
+    <div id="status"></div>
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+    <script src="/static/app.js"></script>
+</body>
+</html>
