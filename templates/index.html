@@ -1,63 +1,48 @@
+
 {% extends 'base.html' %}
 {% block content %}
-<div class="grid lg:grid-cols-4 gap-4">
-  <!-- قائمة المحادثات -->
-  <aside class="lg:col-span-1">
-    <div class="card bg-base-100 shadow h-full">
-      <div class="card-body">
-        <h2 class="card-title">محادثاتي</h2>
-        <ul id="recentList" class="menu menu-sm"></ul>
+<div class="panel">
+  <div class="grid">
+    <aside>
+      <h3>محادثاتي</h3>
+      <ul id="recentList" class="menu"></ul>
+    </aside>
+    <section>
+      <div class="kv">رقمي: <b id="myNumber">—</b></div>
+      <div style="display:flex;gap:10px;margin:10px 0">
+        <input id="peerInput" class="input" placeholder="أدخل رقم يبدأ بـ 33">
+        <button id="startChat" class="btn btn-primary">بدء محادثة</button>
       </div>
-    </div>
-  </aside>
-
-  <!-- مساحة الدردشة -->
-  <section class="lg:col-span-3">
-    <div class="card bg-base-100 shadow">
-      <div class="card-body">
-        <div class="flex items-center justify-between">
-          <div>
-            <div>رقمي: <b id="myNumber">—</b></div>
-            <div class="text-sm opacity-70">المحادثة مع: <b id="peerLabel">—</b></div>
-          </div>
-          <div class="flex gap-2">
-            <button id="copyMyNumber" class="btn btn-ghost btn-sm">نسخ رقمي</button>
-            <a class="btn btn-primary btn-sm" href="#" id="shareLink">مشاركة</a>
-          </div>
-        </div>
-
-        <div class="form-control mt-3">
-          <label class="label"><span class="label-text">ابدأ محادثة مع رقم:</span></label>
-          <div class="flex gap-2">
-            <input id="peerInput" class="input input-bordered grow" placeholder="أدخل الرقم">
-            <button id="startChat" class="btn btn-primary">بدء</button>
-            <button id="hangup" class="btn">إنهاء</button>
-          </div>
-        </div>
-
-        <div id="chatArea" class="mt-4 h-80 overflow-y-auto border rounded p-3 space-y-2"></div>
-
-        <div class="mt-3 flex gap-2">
-          <input id="msgInput" class="input input-bordered grow" placeholder="اكتب رسالة…">
-          <button id="sendBtn" class="btn btn-primary">إرسال</button>
-          <button id="callBtn" class="btn btn-accent">اتصال صوتي</button>
-          <button id="endCallBtn" class="btn btn-outline">إنهاء المكالمة</button>
-        </div>
-        <audio id="remoteAudio" autoplay playsinline></audio>
+      <div class="chat" id="chatArea"></div>
+      <div style="display:flex;gap:8px;margin-top:10px">
+        <input id="msgInput" class="input" placeholder="اكتب رسالة…">
+        <button id="sendBtn" class="btn btn-primary">إرسال</button>
+        <button id="callBtn" class="btn btn-accent">اتصال فيديو</button>
+        <button id="endCallBtn" class="btn btn-danger">إنهاء المكالمة</button>
       </div>
-    </div>
-  </section>
+      <div class="videos">
+        <div>
+          <div class="kv">الكاميرا المحلية</div>
+          <video id="localVideo" autoplay playsinline muted></video>
+        </div>
+        <div>
+          <div class="kv">الطرف الآخر</div>
+          <video id="remoteVideo" autoplay playsinline></video>
+        </div>
+      </div>
+    </section>
+  </div>
 </div>
 
-<!-- Modal قبول/رفض المكالمة -->
-<dialog id="callModal" class="modal">
-  <div class="modal-box">
-    <h3 class="font-bold text-lg">مكالمة واردة</h3>
-    <p class="py-2">يريد <b id="callerNum">—</b> الاتصال بك.</p>
-    <div class="modal-action">
-      <button id="acceptCall" class="btn btn-success">قبول</button>
-      <button id="rejectCall" class="btn btn-error">رفض</button>
+<!-- Modal قبول/رفض -->
+<div id="callModal" class="modal">
+  <div class="box">
+    <h3>📞 مكالمة واردة</h3>
+    <p>يريد <b id="callerNum">—</b> الاتصال بك عبر الفيديو.</p>
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:10px">
+      <button id="acceptCall" class="btn btn-accent">قبول</button>
+      <button id="rejectCall" class="btn btn-danger">رفض</button>
     </div>
   </div>
-</dialog>
+</div>
 {% endblock %}
