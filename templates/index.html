@@ -1,42 +1,89 @@
-{% extends 'base.html' %}
-{% block content %}
-<div class="grid lg:grid-cols-3 gap-4">
-  <section class="lg:col-span-1">
-    <div class="card bg-base-100 shadow">
-      <div class="card-body">
-        <h2 class="card-title">معلوماتي</h2>
-        <p>رقمي: <b id="myNumber">—</b></p>
-        <div class="form-control mt-4">
-          <label class="label"><span class="label-text">ابدأ محادثة مع رقم:</span></label>
-          <input id="peerInput" class="input input-bordered" placeholder="أدخل رقم الطرف الآخر">
-          <div class="mt-2 flex gap-2">
-            <button id="startChat" class="btn btn-primary">بدء المحادثة</button>
-            <button id="hangup" class="btn">إنهاء</button>
-          </div>
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Colling Chat</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/styles.css" />
+  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js" integrity="sha384-oiK6v5BtS8cQvHc1f1WrfX7o4mG9h6c9EwqTQw5XhFf4Z8qvWlCz6GvKcWQZ1rjP" crossorigin="anonymous"></script>
+</head>
+<body>
+  <div id="app" class="app">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="logo">⚡️</div>
+        <div>
+          <div class="brand-title">Colling</div>
+          <div class="brand-sub">محادثات فورية</div>
         </div>
-        <div class="mt-4">
-          <button id="callBtn" class="btn btn-accent w-full">اتصال صوتي</button>
-          <button id="endCallBtn" class="btn btn-outline w-full mt-2">إنهاء المكالمة</button>
-        </div>
-        <p class="text-xs opacity-70 mt-3">
-          ملاحظة: المكالمات تعتمد على STUN مجاني؛ قد لا تعمل على بعض الشبكات بدون TURN.
-        </p>
       </div>
-    </div>
-  </section>
 
-  <section class="lg:col-span-2">
-    <div class="card bg-base-100 shadow h-full">
-      <div class="card-body h-full flex flex-col">
-        <h2 class="card-title">المحادثة</h2>
-        <div id="chatArea" class="grow overflow-y-auto border rounded p-3 space-y-2" style="min-height: 360px;"></div>
-        <div class="mt-3 flex gap-2">
-          <input id="msgInput" class="input input-bordered grow" placeholder="اكتب رسالة…">
-          <button id="sendBtn" class="btn btn-primary">إرسال</button>
+      <div class="me-card">
+        <div class="me-label">رقمي</div>
+        <div class="me-number" id="meNumber">•••••••••</div>
+        <button id="copyMyNumber" class="btn small">نسخ الرقم</button>
+      </div>
+
+      <div class="new-chat">
+        <input id="peerInput" class="input" placeholder="رقم الطرف الآخر" inputmode="numeric" />
+        <button id="startChatBtn" class="btn primary">بدء محادثة</button>
+      </div>
+
+      <div class="side-tools">
+        <button id="toggleTheme" class="btn small">🌙 / ☀️</button>
+        <button id="dndBtn" class="btn small">عدم الإزعاج</button>
+      </div>
+
+      <div class="list-title">المحادثات</div>
+      <ul id="chatList" class="chat-list"></ul>
+
+      <div class="dev-card">
+        <div class="dev-title">المطوّر</div>
+        <div class="dev-name">أنور البحراني</div>
+        <a class="dev-phone" href="tel:774557377">774557377</a>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <div>
+          <div class="peer-name" id="peerTitle">لا توجد محادثة</div>
+          <div class="peer-sub" id="peerSub">اختر محادثة من القائمة</div>
         </div>
-        <audio id="remoteAudio" autoplay playsinline></audio>
+        <div class="top-actions">
+          <button id="callBtn" class="btn ico" title="اتصال صوتي">📞</button>
+          <button id="muteBtn" class="btn ico" title="كتم/إلغاء كتم">🔇</button>
+          <button id="endCallBtn" class="btn ico danger" title="إنهاء المكالمة">🛑</button>
+        </div>
+      </header>
+
+      <section id="messages" class="messages"></section>
+
+      <footer class="composer">
+        <input id="msgBox" class="input flex" placeholder="اكتب رسالتك..." />
+        <button id="sendBtn" class="btn primary">إرسال</button>
+      </footer>
+    </main>
+  </div>
+
+  <!-- Modal: Incoming Call -->
+  <div id="incomingModal" class="modal hidden">
+    <div class="modal-card">
+      <div class="modal-title">📞 مكالمة واردة</div>
+      <div id="incomingFrom" class="modal-sub"></div>
+      <div class="modal-actions">
+        <button id="acceptCall" class="btn primary">قبول</button>
+        <button id="declineCall" class="btn danger">رفض</button>
       </div>
     </div>
-  </section>
-</div>
-{% endblock %}
+  </div>
+
+  <!-- Toast -->
+  <div id="toast" class="toast"></div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
