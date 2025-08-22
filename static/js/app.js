@@ -171,7 +171,6 @@
   });
 
   // ======== WebRTC (صوت فقط) ========
-  // ضبط STUN + ترانسيڤر للصوت لإجبار وجود m=audio
   const createPC = () => {
     const pc = new RTCPeerConnection({
       iceServers:[
@@ -188,56 +187,35 @@
     pc.onconnectionstatechange = () => {
       if(["disconnected","failed","closed"].includes(pc.connectionState)) endCall();
     };
-    pc.oniceconnectionstatechange = () => {
-      // console.log('ICE:', pc.iceConnectionState);
-    };
     return pc;
   };
 
-  // إعدادات مايك مناسبة + إعادة محاولة (Android 14)
-  const MIC_CONSTRAINTS = {
-    audio: {
-      echoCancellation: true,
-      noiseSuppression: true,
-      autoGainControl: true,
-      channelCount: 1
-    },
-    video: false
-  };
-
-  async function getMicStreamWithRetry() {
-    let s;
-    try {
-      s = await navigator.mediaDevices.getUserMedia(MIC_CONSTRAINTS);
-    } catch (e) {
-      console.warn("Retrying mic request (profile fallback)...", e);
-      s = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-    }
-    // فحص حالة التراك
-    try {
-      const tracks = s.getAudioTracks();
-      if (tracks.length === 0) throw new Error("No audio track");
-      const t = tracks[0];
-      if (t && t.enabled === false) t.enabled = true;
-      console.log("Mic track state:", t.readyState, "enabled:", t.enabled);
-    } catch (e) {
-      console.warn("Audio track check:", e);
-    }
+  // فتح مايك بسيط وثابت (بدون تبديل أثناء المكالمة)
+  async function getMicSimple() {
+    const s = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+        channelCount: 1
+      },
+      video: false
+    });
+    const t = s.getAudioTracks()[0];
+    if (!t) throw new Error("لا يوجد مسار صوت");
+    t.enabled = true;
     return s;
   }
 
   const ensureLocal = async () => {
-    if(state.localStream) return state.localStream;
-    // ⚠️ يُستخدم غالبًا عند الطرف المُجيب
-    const s = await getMicStreamWithRetry();
+    if (state.localStream) return state.localStream;
+    const s = await getMicSimple();
     state.localStream = s;
-
     if (localAudioEl) {
       localAudioEl.srcObject = s;
       localAudioEl.muted = true;
       localAudioEl.play?.().catch(()=>{});
     }
-
     return s;
   };
 
@@ -247,104 +225,58 @@
       const snd = pc.getSenders().find(s => s.track && s.track.kind === 'audio');
       if (snd && snd.getParameters) {
         const p = snd.getParameters();
-        p.encodings = [{ maxBitrate: 24000 }];
+        p.encodings = [{ maxBitrate: 20000 }]; // متوافق مع إعدادات SDP أدناه
         await snd.setParameters(p);
       }
     } catch(_) {}
   }
 
-  // ======== (جديد) أدوات حل مشكلة تعطل مايك المتصل ========
-
-  // أوقف أي ستريم قديم بأمان
-  function stopStream(s) {
-    if (!s) return;
-    try { s.getTracks().forEach(t => t.stop()); } catch {}
-  }
-
-  // بروفايلات مايك متعددة (تفيد أجهزة عنيدة في Android 14)
-  const MIC_PROFILES = [
-    { audio: { echoCancellation:true, noiseSuppression:true, autoGainControl:true, channelCount:1 }, video:false },
-    { audio: { echoCancellation:false, noiseSuppression:false, autoGainControl:false, channelCount:1 }, video:false },
-    { audio: true, video:false }
-  ];
-
-  // افتح مايك جديد من الصفر مع ربط أحداث التعطّل
-  async function openMicFresh() {
-    // أقفل أي ستريم سابق
-    stopStream(state.localStream);
-    state.localStream = null;
-
-    let lastErr;
-    for (const prof of MIC_PROFILES) {
-      try {
-        const s = await navigator.mediaDevices.getUserMedia(prof);
-        const track = s.getAudioTracks()[0];
-        if (!track) throw new Error("لا يوجد تراك صوت");
-        track.enabled = true;
-
-        // راقب التعطّل/الإسكات من النظام
-        track.onmute = () => {
-          console.warn("Mic track muted — repairing...");
-          repairCallerMic();
-        };
-        track.onended = () => {
-          console.warn("Mic track ended — repairing...");
-          repairCallerMic();
-        };
-
-        state.localStream = s;
-        // عرض محلي (صامت لتفادي الصدى)
-        if (localAudioEl) {
-          localAudioEl.srcObject = s;
-          localAudioEl.muted = true;
-          localAudioEl.play?.().catch(()=>{});
-        }
-        return s;
-      } catch (e) { lastErr = e; }
+  // تطعيم SDP الخاص بـ Opus لمنع DTX وتثبيت الإرسال على Android 14
+  function mungeOpusSdp(sdp) {
+    const lines = sdp.split('\r\n');
+    // ابحث عن رقم الحمولة (PT) للـ opus
+    let opusPt = null, rtpmapIndex = -1;
+    for (let i=0; i<lines.length; i++) {
+      const m = lines[i].match(/^a=rtpmap:(\d+)\s+opus\/\d+/i);
+      if (m) { opusPt = m[1]; rtpmapIndex = i; break; }
     }
-    throw lastErr || new Error("تعذر فتح المايك");
-  }
+    if (!opusPt) return sdp;
 
-  // استبدال التراك في نفس الـSender بدون إنهاء المكالمة
-  async function repairCallerMic() {
-    try {
-      if (!state.pc) return;
-      const newStream = await openMicFresh();
-      const newTrack  = newStream.getAudioTracks()[0];
-      const sender = state.pc.getSenders().find(s => s.track && s.track.kind === 'audio');
-      if (sender && newTrack) {
-        await sender.replaceTrack(newTrack);
-        showToast("تم إصلاح المايك ✅", {center:true});
-      }
-    } catch (e) {
-      console.error("repairCallerMic failed", e);
-      showToast("تعذر إصلاح المايك", {center:true});
+    // ابحث عن fmtp للـ opus
+    let fmtpIndex = -1;
+    for (let i=0; i<lines.length; i++) {
+      if (lines[i].toLowerCase().startsWith(`a=fmtp:${opusPt}`)) { fmtpIndex = i; break; }
     }
-  }
 
-  // مراقبة الإرسال: لو مافيش حزم/طاقة 2-3 ثواني نصلّح
-  let __OUT_T = null, __OUT_ZERO = 0;
-  function startOutboundMonitor() {
-    clearInterval(__OUT_T);
-    __OUT_ZERO = 0;
-    __OUT_T = setInterval(async () => {
-      try {
-        if (!state.pc) return;
-        const snd = state.pc.getSenders().find(s => s.track && s.track.kind === 'audio');
-        if (!snd) return;
-        const stats = await snd.getStats();
-        let packets = 0;
-        stats.forEach(r => {
-          if (r.type === 'outbound-rtp' && r.kind === 'audio') packets += (r.packetsSent||0);
-        });
-        if (packets === 0) __OUT_ZERO++; else __OUT_ZERO = 0;
-        if (__OUT_ZERO >= 3) {        // ~3 ثواني بلا إرسال
-          console.warn("No outbound audio — auto-repair");
-          __OUT_ZERO = 0;
-          await repairCallerMic();
+    const params = [
+      'stereo=0',
+      'maxaveragebitrate=20000',
+      'useinbandfec=1',
+      'cbr=1',
+      'dtx=0',
+      'ptime=20',
+      'sprop-maxcapturerate=16000'
+    ];
+
+    if (fmtpIndex >= 0) {
+      // أضف المعاملات إذا غير موجودة
+      let line = lines[fmtpIndex];
+      params.forEach(kv => {
+        const [k, v] = kv.split('=');
+        const re = new RegExp(`(;|\\s)${k}=[^;\\s]*`);
+        if (re.test(line)) {
+          line = line.replace(re, `;${k}=${v}`);
+        } else {
+          line += `;${kv}`;
         }
-      } catch {}
-    }, 1000);
+      });
+      lines[fmtpIndex] = line;
+    } else if (rtpmapIndex >= 0) {
+      // أضف fmtp جديد بعد rtpmap
+      const fmtp = `a=fmtp:${opusPt} ${params.join(';')}`;
+      lines.splice(rtpmapIndex + 1, 0, fmtp);
+    }
+    return lines.join('\r\n');
   }
 
   // ======== المتصل (Caller) ========
@@ -352,8 +284,8 @@
     if(!state.peer) return showToast("اختر محادثة أولاً",{center:true});
     unlockAudioOnce();
 
-    // 1) افتح مايك جديد من الصفر (المهم لأندرويد 14)
-    await openMicFresh();
+    // 1) افتح المايك مرة واحدة
+    await ensureLocal();
 
     // 2) أنشئ اتصال جديد (إن وُجد قديم أغلقه)
     if (state.pc) { try { state.pc.close(); } catch{} }
@@ -365,23 +297,23 @@
     // 4) اضبط معدل البت للصوت
     await tuneSenderBitrate(state.pc);
 
-    // 5) أنشئ Offer صوت فقط + عطّل VAD (بعض أجهزة 14 تصمت البداية)
-    const offer = await state.pc.createOffer({
+    // 5) أنشئ Offer صوت فقط + عطّل VAD
+    let offer = await state.pc.createOffer({
       offerToReceiveAudio:true,
       offerToReceiveVideo:false,
       voiceActivityDetection:false
     });
-    await state.pc.setLocalDescription(offer);
 
-    // 6) أرسل الـSDP بعد تأخير بسيط
+    // 6) طعّم الـSDP للـ Opus
+    const munged = mungeOpusSdp(offer.sdp);
+    await state.pc.setLocalDescription({ type: offer.type, sdp: munged });
+
+    // 7) أرسل الـSDP بعد تأخير بسيط
     setTimeout(() => {
       socket.emit("webrtc-offer", { peer: state.peer, sdp: state.pc.localDescription });
-    }, 250);
+    }, 200);
 
-    // 7) فعّل مراقبة الإرسال (تصليح تلقائي لو وقف الإرسال)
-    startOutboundMonitor();
-
-    showToast("جاري الاتصال...", {center:true,duration:1400});
+    showToast("جاري الاتصال...", {center:true,duration:1200});
   };
 
   // ======== المُجيب (Callee) ========
@@ -396,7 +328,6 @@
       await ensureLocal();
       state.localStream.getAudioTracks().forEach(t=>state.pc.addTrack(t,state.localStream));
     } catch(e) {
-      console.warn('Accept path A failed, trying B...', e);
       await ensureLocal();
       state.localStream.getAudioTracks().forEach(t=>state.pc.addTrack(t,state.localStream));
       await state.pc.setRemoteDescription(sdp);
@@ -404,28 +335,32 @@
 
     await tuneSenderBitrate(state.pc);
 
-    const answer = await state.pc.createAnswer({
+    // أنشئ Answer وطعّم الـSDP
+    let answer = await state.pc.createAnswer({
       offerToReceiveAudio:true,
       offerToReceiveVideo:false,
       voiceActivityDetection:false
     });
-    await state.pc.setLocalDescription(answer);
+    const munged = mungeOpusSdp(answer.sdp);
+    await state.pc.setLocalDescription({ type: answer.type, sdp: munged });
 
     setTimeout(() => {
       socket.emit("webrtc-answer", { peer: from, sdp: state.pc.localDescription });
     }, 200);
 
     hideIncoming();
-    // تشغيل الصوت الوارد صراحة
     remoteAudioEl?.play?.().catch(()=>{});
     showToast("تم الاتصال ✔",{center:true,duration:1200});
   };
 
   const endCall = () => {
-    if(state.pc){ try{state.pc.close();}catch{} state.pc=null; }
-    if(state.localStream){ stopStream(state.localStream); state.localStream = null; }
+    if (state.pc) { try { state.pc.close(); } catch{} state.pc = null; }
+    if (state.localStream) {
+      try { state.localStream.getTracks().forEach(t => t.stop()); } catch {}
+      state.localStream = null;
+    }
     detachRemote();
-    showToast("تم إنهاء المكالمة",{center:true,duration:1400});
+    showToast("تم إنهاء المكالمة",{center:true,duration:1200});
   };
 
   const attachRemote = (stream)=>{
@@ -436,29 +371,10 @@
       try { remoteAudioEl.volume = 1.0; } catch(_) {}
       remoteAudioEl.play?.().catch(()=>{ /* سيتفعل بعد أول نقرة بفضل unlock */ });
     }
-
-    // Fallback عبر Web Audio API لو بقى صامت على Android 14
-    try {
-      if (!window.__AUDIO_CTX) {
-        const AC = window.AudioContext || window.webkitAudioContext;
-        if (AC) window.__AUDIO_CTX = new AC();
-      }
-      if (window.__AUDIO_CTX && window.__AUDIO_CTX.state === "suspended") {
-        window.__AUDIO_CTX.resume?.().catch(()=>{});
-      }
-      if (window.__AUDIO_CTX && !window.__REMOTE_SOURCE) {
-        window.__REMOTE_SOURCE = window.__AUDIO_CTX.createMediaStreamSource(stream);
-        window.__REMOTE_SOURCE.connect(window.__AUDIO_CTX.destination);
-      }
-    } catch(e) { /* ignore */ }
   };
 
   const detachRemote = ()=>{
     if(remoteAudioEl){ remoteAudioEl.srcObject=null; }
-    if(window.__REMOTE_SOURCE){
-      try { window.__REMOTE_SOURCE.disconnect(); } catch(_) {}
-      window.__REMOTE_SOURCE = null;
-    }
   };
 
   socket.on("webrtc-offer", ({ from, sdp }) => {
@@ -475,7 +391,6 @@
   socket.on("webrtc-answer", async ({ from, sdp }) => {
     if(!state.pc) return;
     await state.pc.setRemoteDescription(sdp);
-    // تشغيل الصوت الوارد صراحة
     remoteAudioEl?.play?.().catch(()=>{});
     showToast("تم الاتصال ✔",{center:true});
   });
