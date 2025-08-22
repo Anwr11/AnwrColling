@@ -1,24 +1,28 @@
 (() => {
   const $ = s => document.querySelector(s);
   const messagesEl = $("#messages");
-  const chatList = $("#chatList");
-  const peerTitle = $("#peerTitle");
-  const peerSub = $("#peerSub");
-  const msgBox = $("#msgBox");
-  const sendBtn = $("#sendBtn");
+  const chatList   = $("#chatList");
+  const peerTitle  = $("#peerTitle");
+  const peerSub    = $("#peerSub");
+  const msgBox     = $("#msgBox");
+  const sendBtn    = $("#sendBtn");
   const startChatBtn = $("#startChatBtn");
-  const peerInput = $("#peerInput");
+  const peerInput  = $("#peerInput");
   const meNumberEl = $("#meNumber");
   const copyMyNumber = $("#copyMyNumber");
-  const callBtn = $("#callBtn");
+  const callBtn    = $("#callBtn");
   const endCallBtn = $("#endCallBtn");
-  const muteBtn = $("#muteBtn");
-  const menuBtn = $("#menuBtn");
-  const sidebar = $("#sidebar");
-  const overlay = $("#overlay");
-  const fab = $("#fab");            // آمن حتى لو حذفته من HTML
-  const exitChatBtn = $("#exitChat");
-  const toast = $("#toast");
+  const muteBtn    = $("#muteBtn");
+  const menuBtn    = $("#menuBtn");
+  const sidebar    = $("#sidebar");
+  const overlay    = $("#overlay");
+  const fab        = $("#fab");
+  const exitChatBtn= $("#exitChat");
+  const toast      = $("#toast");
+
+  // عناصر صوت (موجودة في HTML)
+  const localAudioEl  = $("#localAudio");
+  const remoteAudioEl = $("#remoteAudio");
 
   // ======== Unlock للصوت (ضروري لأندرويد 14) ========
   let __audioUnlocked = false;
@@ -32,10 +36,9 @@
     } catch(_) {}
     __audioUnlocked = true;
   }
-  // نفعل عند أول نقرة في الصفحة
   document.addEventListener('click', unlockAudioOnce, { once: true });
 
-  // ======== Toast helper (center option) ========
+  // ======== Toast helper ========
   window.showToast = function(message, opts){
     opts = opts||{};
     toast.textContent = message;
@@ -55,12 +58,16 @@
       messagesEl.scrollTop = messagesEl.scrollHeight;
     }
   };
+  messagesEl.addEventListener("scroll", () => { stickBottom = nearBottom(); });
 
-  messagesEl.addEventListener("scroll", () => {
-    stickBottom = nearBottom();
-  });
-
-  const state = { me:null, peer:null, dnd:false, chats:new Map(), pc:null, localStream:null, muted:false };
+  // ======== State ========
+  const state = {
+    me:null, peer:null, dnd:false,
+    chats:new Map(),
+    pc:null,
+    localStream:null,
+    muted:false
+  };
 
   const saveLocal = () => {
     localStorage.setItem("colling:me", state.me||"");
@@ -71,13 +78,12 @@
     try {
       JSON.parse(localStorage.getItem("colling:chats")||"[]")
         .forEach(p=>state.chats.set(p,{unread:0,online:false}));
-    } catch{}
+    } catch {}
   };
 
-  // ======== قائمة المحادثات + زر الخروج كآخر عنصر ========
+  // ======== قائمة المحادثات + خروج ========
   const renderChatList = () => {
     chatList.innerHTML = "";
-
     for (const [p, meta] of state.chats.entries()) {
       const li = document.createElement("li");
       li.className = "chat-item" + (state.peer === p ? " active" : "");
@@ -87,20 +93,17 @@
       li.onclick = () => switchPeer(p);
       chatList.appendChild(li);
     }
-
     const exitItem = document.createElement("li");
     exitItem.className = "chat-item exit" + (!state.peer ? " disabled" : "");
     exitItem.innerHTML =
       `<span class="exit-ico">🚪</span>` +
       `<span>${state.peer ? "الخروج من المحادثة الحالية" : "لا توجد محادثة للخروج"}</span>`;
-
     exitItem.onclick = () => {
       if (!state.peer) return;
       try { socket.emit("leave_chat", { peer: state.peer }); } catch {}
       state.peer = null;
       exitToList();
     };
-
     chatList.appendChild(exitItem);
   };
 
@@ -127,7 +130,7 @@
     stickBottom = true; scrollToBottom(true);
   };
 
-  // ======== socket.io ========
+  // ======== socket.io (WebSocket فقط لأداء أفضل) ========
   const socket = io({ transports:["websocket"], autoConnect:false, upgrade:false, reconnection:true });
   socket.on("connect", () => socket.emit("register", { number: state.me }));
   socket.on("registered", ({ number }) => showToast("تم تسجيل الرقم: " + number));
@@ -168,7 +171,7 @@
   });
 
   // ======== WebRTC (صوت فقط) ========
-  // STUN + ترانسيڤر للصوت لإجبار إنشاء m-line للصوت
+  // ضبط STUN + ترانسيڤر للصوت لإجبار وجود m=audio
   const createPC = () => {
     const pc = new RTCPeerConnection({
       iceServers:[
@@ -191,50 +194,86 @@
     return pc;
   };
 
-  // إعادة محاولة للمايك + إعدادات صوت تخفف المشاكل
-  const getMicStream = async () => {
+  // إعدادات مايك مناسبة + إعادة محاولة (Android 14)
+  const MIC_CONSTRAINTS = {
+    audio: {
+      echoCancellation: true,
+      noiseSuppression: true,
+      autoGainControl: true,
+      channelCount: 1
+    },
+    video: false
+  };
+
+  async function getMicStreamWithRetry() {
     let s;
     try {
-      s = await navigator.mediaDevices.getUserMedia({
-        audio: { echoCancellation:true, noiseSuppression:true, autoGainControl:true, channelCount:1 },
-        video: false
-      });
-    } catch(e) {
-      console.warn("Retrying mic request...", e);
-      s = await navigator.mediaDevices.getUserMedia({ audio:true, video:false });
+      s = await navigator.mediaDevices.getUserMedia(MIC_CONSTRAINTS);
+    } catch (e) {
+      console.warn("Retrying mic request (profile fallback)...", e);
+      s = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+    }
+    // فحص حالة التراك
+    try {
+      const tracks = s.getAudioTracks();
+      if (tracks.length === 0) throw new Error("No audio track");
+      const t = tracks[0];
+      // إذا Disabled نفعل
+      if (t && t.enabled === false) t.enabled = true;
+      console.log("Mic track state:", t.readyState, "enabled:", t.enabled);
+    } catch (e) {
+      console.warn("Audio track check:", e);
     }
     return s;
-  };
+  }
 
   const ensureLocal = async () => {
     if(state.localStream) return state.localStream;
-    const s = await getMicStream();
+    // ⚠️ مهم: يتم استدعاؤها فقط من زر الاتصال (user gesture)
+    const s = await getMicStreamWithRetry();
     state.localStream = s;
+
+    // عرض محلي (منع صدى)
+    if (localAudioEl) {
+      localAudioEl.srcObject = s;
+      localAudioEl.muted = true;
+      localAudioEl.play?.().catch(()=>{});
+    }
+
     return s;
   };
+
+  // ضبط bitrate للصوت (≈24kbps) لتحسين الثبات
+  async function tuneSenderBitrate(pc){
+    try {
+      const snd = pc.getSenders().find(s => s.track && s.track.kind === 'audio');
+      if (snd && snd.getParameters) {
+        const p = snd.getParameters();
+        p.encodings = [{ maxBitrate: 24000 }];
+        await snd.setParameters(p);
+      }
+    } catch(_) {}
+  }
 
   const startCall = async () => {
     if(!state.peer) return showToast("اختر محادثة أولاً",{center:true});
     unlockAudioOnce();
 
+    // 1) احصل على المايك (بعد الضغط على الزر)
     await ensureLocal();
+
+    // 2) أنشئ PC وأضف التراك
     state.pc = createPC();
-    state.localStream.getTracks().forEach(t=>state.pc.addTrack(t,state.localStream));
+    state.localStream.getAudioTracks().forEach(t=>state.pc.addTrack(t, state.localStream));
 
-    // خفض البت للصوت لتحسين الثبات على شبكات ضعيفة/أندرويد 14
-    try {
-      const snd = state.pc.getSenders().find(s => s.track && s.track.kind === 'audio');
-      if (snd && snd.getParameters) {
-        const p = snd.getParameters();
-        p.encodings = [{ maxBitrate: 24000 }]; // ~24 kbps
-        await snd.setParameters(p);
-      }
-    } catch(_) {}
+    // 3) اضبط البت
+    await tuneSenderBitrate(state.pc);
 
+    // 4) اصنع Offer وحدد أنه صوت فقط
     const offer = await state.pc.createOffer({ offerToReceiveAudio:true, offerToReceiveVideo:false });
     await state.pc.setLocalDescription(offer);
 
-    // تأخير بسيط مفيد لأندرويد 14
+    // 5) تأخير بسيط (Android 14)
     setTimeout(() => {
       socket.emit("webrtc-offer", { peer: state.peer, sdp: state.pc.localDescription });
     }, 250);
@@ -247,17 +286,19 @@
     state.peer = from; renderChatList();
     state.pc = createPC();
 
-    // طريقتان — بعض أجهزة أندرويد 14 تحتاج ترتيب مختلف
+    // نحاول طريقتين: (أ) setRemote ثم getUserMedia، وإن فشلت نبدل
     try {
       await state.pc.setRemoteDescription(sdp);
       await ensureLocal();
-      state.localStream.getTracks().forEach(t=>state.pc.addTrack(t,state.localStream));
+      state.localStream.getAudioTracks().forEach(t=>state.pc.addTrack(t,state.localStream));
     } catch(e) {
       console.warn('Accept path A failed, trying B...', e);
       await ensureLocal();
-      state.localStream.getTracks().forEach(t=>state.pc.addTrack(t,state.localStream));
+      state.localStream.getAudioTracks().forEach(t=>state.pc.addTrack(t,state.localStream));
       await state.pc.setRemoteDescription(sdp);
     }
+
+    await tuneSenderBitrate(state.pc);
 
     const answer = await state.pc.createAnswer({ offerToReceiveAudio:true, offerToReceiveVideo:false });
     await state.pc.setLocalDescription(answer);
@@ -267,6 +308,8 @@
     }, 200);
 
     hideIncoming();
+    // تشغيل الصوت الوارد صراحة
+    remoteAudioEl?.play?.().catch(()=>{});
     showToast("تم الاتصال ✔",{center:true,duration:1200});
   };
 
@@ -281,22 +324,36 @@
   };
 
   const attachRemote = (stream)=>{
-    let el=document.getElementById("remoteAudio");
-    if(!el){
-      el=document.createElement("audio");
-      el.id="remoteAudio";
-      el.autoplay=true;
-      el.playsInline = true;
-      document.body.appendChild(el);
+    if (remoteAudioEl) {
+      remoteAudioEl.srcObject = stream;
+      remoteAudioEl.playsInline = true;
+      try { remoteAudioEl.muted = false; } catch(_) {}
+      try { remoteAudioEl.volume = 1.0; } catch(_) {}
+      remoteAudioEl.play?.().catch(()=>{ /* سيتفعل بعد أول نقرة بفضل unlock */ });
     }
-    el.srcObject=stream;
-    // تشغيل صريح — يحل مشكلة عدم سماع الصوت على أندرويد 14
-    el.play?.().catch(()=>{ /* سيتفعل بعد أول نقرة بفضل unlock */ });
+
+    // Fallback عبر Web Audio API لو بقى صامت على Android 14
+    try {
+      if (!window.__AUDIO_CTX) {
+        const AC = window.AudioContext || window.webkitAudioContext;
+        if (AC) window.__AUDIO_CTX = new AC();
+      }
+      if (window.__AUDIO_CTX && window.__AUDIO_CTX.state === "suspended") {
+        window.__AUDIO_CTX.resume?.().catch(()=>{});
+      }
+      if (window.__AUDIO_CTX && !window.__REMOTE_SOURCE) {
+        window.__REMOTE_SOURCE = window.__AUDIO_CTX.createMediaStreamSource(stream);
+        window.__REMOTE_SOURCE.connect(window.__AUDIO_CTX.destination);
+      }
+    } catch(e) { /* ignore */ }
   };
 
   const detachRemote = ()=>{
-    const el=document.getElementById("remoteAudio");
-    if(el){ el.srcObject=null; el.remove(); }
+    if(remoteAudioEl){ remoteAudioEl.srcObject=null; }
+    if(window.__REMOTE_SOURCE){
+      try { window.__REMOTE_SOURCE.disconnect(); } catch(_) {}
+      window.__REMOTE_SOURCE = null;
+    }
   };
 
   socket.on("webrtc-offer", ({ from, sdp }) => {
@@ -313,6 +370,8 @@
   socket.on("webrtc-answer", async ({ from, sdp }) => {
     if(!state.pc) return;
     await state.pc.setRemoteDescription(sdp);
+    // تشغيل الصوت الوارد صراحة
+    remoteAudioEl?.play?.().catch(()=>{});
     showToast("تم الاتصال ✔",{center:true});
   });
 
@@ -373,14 +432,11 @@
     showToast(state.muted?"تم الكتم":"تم إلغاء الكتم");
   };
 
-  callBtn.onclick = startCall;
-  endCallBtn.onclick = endCall;
+  callBtn.onclick   = startCall;  // ← المايك يفتح هنا فقط (User Gesture)
+  endCallBtn.onclick= endCall;
 
-  // ======== Exit current chat ========
   exitChatBtn && (exitChatBtn.onclick = () => {
-    if (state.peer) {
-      try { socket.emit("leave_chat", { peer: state.peer }); } catch {}
-    }
+    if (state.peer) { try { socket.emit("leave_chat", { peer: state.peer }); } catch {} }
     state.peer = null;
     exitToList();
   });
@@ -391,7 +447,7 @@
     overlay.classList.toggle("show");
   };
   menuBtn.onclick = toggleDrawer;
-  overlay.onclick = toggleDrawer;
+  overlay.onclick  = toggleDrawer;
   if (fab) fab.onclick = toggleDrawer;
 
   // ======== boot ========
@@ -413,8 +469,8 @@
 
   // incoming modal refs
   const incomingModal = $("#incomingModal");
-  const incomingFrom = $("#incomingFrom");
-  const acceptCall = $("#acceptCall");
-  const declineCall = $("#declineCall");
+  const incomingFrom  = $("#incomingFrom");
+  const acceptCall    = $("#acceptCall");
+  const declineCall   = $("#declineCall");
   function hideIncoming(){ incomingModal.classList.remove("show"); }
 })();
