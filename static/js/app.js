@@ -20,6 +20,21 @@
   const exitChatBtn = $("#exitChat");
   const toast = $("#toast");
 
+  // ======== Unlock للصوت (ضروري لأندرويد 14) ========
+  let __audioUnlocked = false;
+  function unlockAudioOnce() {
+    if (__audioUnlocked) return;
+    try {
+      const a = document.createElement('audio');
+      a.muted = true;
+      a.playsInline = true;
+      a.play?.().catch(()=>{});
+    } catch(_) {}
+    __audioUnlocked = true;
+  }
+  // نفعل عند أول نقرة في الصفحة
+  document.addEventListener('click', unlockAudioOnce, { once: true });
+
   // ======== Toast helper (center option) ========
   window.showToast = function(message, opts){
     opts = opts||{};
@@ -31,7 +46,6 @@
   };
 
   // ======== Scroll helpers ========
-  // لو أنت في آخر المحادثة يثبت True؛ لو طلعت لفوق يصير False، فنحترم قراءتك
   let stickBottom = true;
   const nearBottom = () =>
     (messagesEl.scrollTop + messagesEl.clientHeight >= messagesEl.scrollHeight - 8);
@@ -42,7 +56,6 @@
     }
   };
 
-  // نراقب سلوكك في التمرير
   messagesEl.addEventListener("scroll", () => {
     stickBottom = nearBottom();
   });
@@ -65,7 +78,6 @@
   const renderChatList = () => {
     chatList.innerHTML = "";
 
-    // المحادثات المحفوظة
     for (const [p, meta] of state.chats.entries()) {
       const li = document.createElement("li");
       li.className = "chat-item" + (state.peer === p ? " active" : "");
@@ -76,7 +88,6 @@
       chatList.appendChild(li);
     }
 
-    // عنصر الخروج كآخر عنصر في القائمة
     const exitItem = document.createElement("li");
     exitItem.className = "chat-item exit" + (!state.peer ? " disabled" : "");
     exitItem.innerHTML =
@@ -84,10 +95,10 @@
       `<span>${state.peer ? "الخروج من المحادثة الحالية" : "لا توجد محادثة للخروج"}</span>`;
 
     exitItem.onclick = () => {
-      if (!state.peer) return;                 // لا يعمل إن لم تكن داخل محادثة
+      if (!state.peer) return;
       try { socket.emit("leave_chat", { peer: state.peer }); } catch {}
       state.peer = null;
-      exitToList();                             // نفس دالة الخروج المعتادة
+      exitToList();
     };
 
     chatList.appendChild(exitItem);
@@ -101,7 +112,6 @@
     messagesEl.appendChild(sys);
     peerTitle.textContent = "لا توجد محادثة";
     peerSub.textContent = "اختر محادثة من القائمة";
-    // ننزل لأسفل فوراً
     scrollToBottom(true);
   };
 
@@ -114,12 +124,11 @@
     renderChatList();
     socket.emit("start_chat", { peer: p });
     sidebar.classList.remove("open"); overlay.classList.remove("show");
-    // لما تفتح محادثة خلك مثبت تحت
     stickBottom = true; scrollToBottom(true);
   };
 
   // ======== socket.io ========
-  const socket = io({ transports:["websocket"], autoConnect:false });
+  const socket = io({ transports:["websocket"], autoConnect:false, upgrade:false, reconnection:true });
   socket.on("connect", () => socket.emit("register", { number: state.me }));
   socket.on("registered", ({ number }) => showToast("تم تسجيل الرقم: " + number));
   socket.on("presence", ({ number, status }) => {
@@ -133,7 +142,7 @@
     div.className="bubble system";
     div.textContent=d.text||"";
     messagesEl.appendChild(div);
-    scrollToBottom(); // ← يحترم كونك تقرأ فوق أو لا
+    scrollToBottom();
   });
   socket.on("typing", ({ from, flag }) => {
     if(from===state.peer){
@@ -151,59 +160,140 @@
     bubble.className = "bubble " + (p.from===state.me?"me":"");
     bubble.innerHTML = `<div>${p.text}</div><div class="meta">${new Date(p.ts*1000).toLocaleTimeString()}</div>`;
     messagesEl.appendChild(bubble);
-
-    // اتبع أسفل الرسائل فقط لو كنت أساساً بالأسفل
     scrollToBottom();
-
     if(p.from!==state.me && fromPeer!==state.peer){
       state.chats.get(fromPeer).unread++;
       renderChatList();
     }
   });
 
-  // ======== WebRTC (stubs) ========
+  // ======== WebRTC (صوت فقط) ========
+  // STUN + ترانسيڤر للصوت لإجبار إنشاء m-line للصوت
   const createPC = () => {
-    const pc = new RTCPeerConnection({ iceServers:[{urls:"stun:stun.l.google.com:19302"}] });
-    pc.onicecandidate = e => { if(e.candidate && state.peer) socket.emit("webrtc-ice", { peer: state.peer, candidate: e.candidate }); };
+    const pc = new RTCPeerConnection({
+      iceServers:[
+        {urls:"stun:stun.l.google.com:19302"},
+        {urls:"stun:stun1.l.google.com:19302"}
+      ]
+    });
+    try { pc.addTransceiver('audio', { direction: 'sendrecv' }); } catch(_) {}
+
+    pc.onicecandidate = e => {
+      if(e.candidate && state.peer) socket.emit("webrtc-ice", { peer: state.peer, candidate: e.candidate });
+    };
     pc.ontrack = e => attachRemote(e.streams[0]);
-    pc.onconnectionstatechange = () => { if(["disconnected","failed","closed"].includes(pc.connectionState)) endCall(); };
+    pc.onconnectionstatechange = () => {
+      if(["disconnected","failed","closed"].includes(pc.connectionState)) endCall();
+    };
+    pc.oniceconnectionstatechange = () => {
+      // console.log('ICE:', pc.iceConnectionState);
+    };
     return pc;
   };
+
+  // إعادة محاولة للمايك + إعدادات صوت تخفف المشاكل
+  const getMicStream = async () => {
+    let s;
+    try {
+      s = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation:true, noiseSuppression:true, autoGainControl:true, channelCount:1 },
+        video: false
+      });
+    } catch(e) {
+      console.warn("Retrying mic request...", e);
+      s = await navigator.mediaDevices.getUserMedia({ audio:true, video:false });
+    }
+    return s;
+  };
+
   const ensureLocal = async () => {
     if(state.localStream) return state.localStream;
-    const s = await navigator.mediaDevices.getUserMedia({ audio:true, video:false });
-    state.localStream = s; return s;
+    const s = await getMicStream();
+    state.localStream = s;
+    return s;
   };
+
   const startCall = async () => {
     if(!state.peer) return showToast("اختر محادثة أولاً",{center:true});
+    unlockAudioOnce();
+
     await ensureLocal();
     state.pc = createPC();
     state.localStream.getTracks().forEach(t=>state.pc.addTrack(t,state.localStream));
-    await state.pc.setLocalDescription(await state.pc.createOffer());
-    socket.emit("webrtc-offer", { peer: state.peer, sdp: state.pc.localDescription });
+
+    // خفض البت للصوت لتحسين الثبات على شبكات ضعيفة/أندرويد 14
+    try {
+      const snd = state.pc.getSenders().find(s => s.track && s.track.kind === 'audio');
+      if (snd && snd.getParameters) {
+        const p = snd.getParameters();
+        p.encodings = [{ maxBitrate: 24000 }]; // ~24 kbps
+        await snd.setParameters(p);
+      }
+    } catch(_) {}
+
+    const offer = await state.pc.createOffer({ offerToReceiveAudio:true, offerToReceiveVideo:false });
+    await state.pc.setLocalDescription(offer);
+
+    // تأخير بسيط مفيد لأندرويد 14
+    setTimeout(() => {
+      socket.emit("webrtc-offer", { peer: state.peer, sdp: state.pc.localDescription });
+    }, 250);
+
     showToast("جاري الاتصال...", {center:true,duration:1400});
   };
+
   const acceptIncoming = async (from, sdp) => {
-    await ensureLocal();
+    unlockAudioOnce();
     state.peer = from; renderChatList();
     state.pc = createPC();
-    state.localStream.getTracks().forEach(t=>state.pc.addTrack(t,state.localStream));
-    await state.pc.setRemoteDescription(sdp);
-    await state.pc.setLocalDescription(await state.pc.createAnswer());
-    socket.emit("webrtc-answer", { peer: from, sdp: state.pc.localDescription });
+
+    // طريقتان — بعض أجهزة أندرويد 14 تحتاج ترتيب مختلف
+    try {
+      await state.pc.setRemoteDescription(sdp);
+      await ensureLocal();
+      state.localStream.getTracks().forEach(t=>state.pc.addTrack(t,state.localStream));
+    } catch(e) {
+      console.warn('Accept path A failed, trying B...', e);
+      await ensureLocal();
+      state.localStream.getTracks().forEach(t=>state.pc.addTrack(t,state.localStream));
+      await state.pc.setRemoteDescription(sdp);
+    }
+
+    const answer = await state.pc.createAnswer({ offerToReceiveAudio:true, offerToReceiveVideo:false });
+    await state.pc.setLocalDescription(answer);
+
+    setTimeout(() => {
+      socket.emit("webrtc-answer", { peer: from, sdp: state.pc.localDescription });
+    }, 200);
+
     hideIncoming();
     showToast("تم الاتصال ✔",{center:true,duration:1200});
   };
+
   const endCall = () => {
     if(state.pc){ try{state.pc.close();}catch{} state.pc=null; }
+    if(state.localStream){
+      try{ state.localStream.getTracks().forEach(t=>t.stop()); }catch{}
+      state.localStream = null;
+    }
     detachRemote();
     showToast("تم إنهاء المكالمة",{center:true,duration:1400});
   };
+
   const attachRemote = (stream)=>{
     let el=document.getElementById("remoteAudio");
-    if(!el){ el=document.createElement("audio"); el.id="remoteAudio"; el.autoplay=true; document.body.appendChild(el); }
+    if(!el){
+      el=document.createElement("audio");
+      el.id="remoteAudio";
+      el.autoplay=true;
+      el.playsInline = true;
+      document.body.appendChild(el);
+    }
     el.srcObject=stream;
+    // تشغيل صريح — يحل مشكلة عدم سماع الصوت على أندرويد 14
+    el.play?.().catch(()=>{ /* سيتفعل بعد أول نقرة بفضل unlock */ });
   };
+
   const detachRemote = ()=>{
     const el=document.getElementById("remoteAudio");
     if(el){ el.srcObject=null; el.remove(); }
@@ -219,11 +309,13 @@
       showToast("تم رفض المكالمة",{center:true});
     };
   });
+
   socket.on("webrtc-answer", async ({ from, sdp }) => {
     if(!state.pc) return;
     await state.pc.setRemoteDescription(sdp);
     showToast("تم الاتصال ✔",{center:true});
   });
+
   socket.on("webrtc-ice", async ({ from, candidate }) => {
     if(!state.pc) return;
     try{ await state.pc.addIceCandidate(candidate);}catch(e){}
@@ -235,7 +327,7 @@
     sidebar.classList.add("open");
     overlay.classList.add("show");
     showToast("تم الخروج من المحادثة",{center:true});
-    renderChatList(); // ← حدّث القائمة عشان زر الخروج يتعطل إذا ما في محادثة
+    renderChatList();
   };
 
   sendBtn.onclick = () => {
@@ -243,9 +335,9 @@
     if(!text||!state.peer) return;
     socket.emit("message",{ peer:state.peer, text });
     msgBox.value="";
-    // أنت الآن كتبت رسالة، عادة تكون عند الأسفل
     scrollToBottom(true);
   };
+
   msgBox.oninput = () => {
     if(state.peer) socket.emit("typing",{ peer:state.peer, flag:true });
     clearTimeout(msgBox._t);
@@ -253,31 +345,38 @@
       if(state.peer) socket.emit("typing",{ peer:state.peer, flag:false });
     },600);
   };
+
   $("#dndBtn").onclick = (e)=>{
     state.dnd=!state.dnd;
     e.target.classList.toggle("primary",state.dnd);
     showToast(state.dnd?"تم تفعيل عدم الإزعاج":"تم إيقاف عدم الإزعاج");
   };
+
   $("#toggleTheme").onclick = ()=> document.body.classList.toggle("light");
+
   copyMyNumber.onclick = async ()=>{
     try{ await navigator.clipboard.writeText(state.me); showToast("تم النسخ"); }
     catch{ showToast("لم يتم النسخ"); }
   };
+
   startChatBtn.onclick = ()=>{
     const p=(peerInput.value||"").trim();
     if(!p) return;
     if(!state.chats.has(p)) state.chats.set(p,{unread:0,online:false});
     saveLocal(); renderChatList(); switchPeer(p); peerInput.value="";
   };
+
   muteBtn.onclick = ()=>{
     if(!state.localStream) return;
     state.muted=!state.muted;
     state.localStream.getAudioTracks().forEach(t=>t.enabled=!state.muted);
     showToast(state.muted?"تم الكتم":"تم إلغاء الكتم");
   };
-  callBtn.onclick = startCall; endCallBtn.onclick = endCall;
 
-  // ======== Exit current chat (زر الموجود فوق الكومبوزر إن كان موجود) ========
+  callBtn.onclick = startCall;
+  endCallBtn.onclick = endCall;
+
+  // ======== Exit current chat ========
   exitChatBtn && (exitChatBtn.onclick = () => {
     if (state.peer) {
       try { socket.emit("leave_chat", { peer: state.peer }); } catch {}
@@ -293,7 +392,7 @@
   };
   menuBtn.onclick = toggleDrawer;
   overlay.onclick = toggleDrawer;
-  if (fab) fab.onclick = toggleDrawer;   // آمن لو حذفت زر +
+  if (fab) fab.onclick = toggleDrawer;
 
   // ======== boot ========
   (async ()=>{
@@ -307,6 +406,9 @@
     renderChatList();
     clearMessagesUI();
     socket.connect();
+
+    // Keep-alive بسيط لتخفيف الـ cold start أثناء الجلسة
+    setInterval(()=>{ fetch('/healthz').catch(()=>{}); }, 240000);
   })();
 
   // incoming modal refs
