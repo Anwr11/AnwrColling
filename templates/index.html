@@ -17,9 +17,9 @@
         <div id="peerSub" class="sub">اختر محادثة من القائمة</div>
       </div>
       <div class="actions">
-        <button id="muteBtn" class="btn ico">🔇</button>
-        <button id="callBtn" class="btn ico">📞</button>
-        <button id="endCallBtn" class="btn ico danger">🛑</button>
+        <button id="muteBtn" class="btn ico" aria-label="كتم/إلغاء كتم">🔇</button>
+        <button id="callBtn" class="btn ico" aria-label="اتصال صوتي">📞</button>
+        <button id="endCallBtn" class="btn ico danger" aria-label="إنهاء المكالمة">🛑</button>
       </div>
     </header>
 
@@ -79,6 +79,12 @@
         <button id="sendBtn" class="btn primary big">إرسال</button>
       </footer>
     </main>
+
+    <!-- عناصر الصوت (محلي/بعيد) — مخفية بصريًا لكنها موجودة للاستخدام -->
+    <div style="position:absolute;width:0;height:0;overflow:hidden;opacity:0;pointer-events:none;">
+      <audio id="localAudio" autoplay muted playsinline></audio>
+      <audio id="remoteAudio" autoplay playsinline></audio>
+    </div>
 
     <!-- <button id="addBtn" class="add-btn">+</button> -->
   </div>
