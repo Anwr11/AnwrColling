@@ -20,11 +20,10 @@
   const exitChatBtn= $("#exitChat");
   const toast      = $("#toast");
 
-  // عناصر صوت (موجودة في HTML)
   const localAudioEl  = $("#localAudio");
   const remoteAudioEl = $("#remoteAudio");
 
-  // ======== Unlock للصوت (ضروري لأندرويد 14) ========
+  // ===== Unlock للصوت (Android 14) =====
   let __audioUnlocked = false;
   function unlockAudioOnce() {
     if (__audioUnlocked) return;
@@ -38,7 +37,7 @@
   }
   document.addEventListener('click', unlockAudioOnce, { once: true });
 
-  // ======== Toast helper ========
+  // ===== Toast =====
   window.showToast = function(message, opts){
     opts = opts||{};
     toast.textContent = message;
@@ -48,25 +47,23 @@
     toast._t = setTimeout(()=> toast.className="toast", dur);
   };
 
-  // ======== Scroll helpers ========
+  // ===== Scroll =====
   let stickBottom = true;
   const nearBottom = () =>
     (messagesEl.scrollTop + messagesEl.clientHeight >= messagesEl.scrollHeight - 8);
-
   const scrollToBottom = (force = false) => {
-    if (force || stickBottom) {
-      messagesEl.scrollTop = messagesEl.scrollHeight;
-    }
+    if (force || stickBottom) messagesEl.scrollTop = messagesEl.scrollHeight;
   };
   messagesEl.addEventListener("scroll", () => { stickBottom = nearBottom(); });
 
-  // ======== State ========
+  // ===== State =====
   const state = {
     me:null, peer:null, dnd:false,
     chats:new Map(),
     pc:null,
     localStream:null,
-    muted:false
+    muted:false,
+    iAmCaller:false
   };
 
   const saveLocal = () => {
@@ -75,13 +72,11 @@
   };
   const loadLocal = () => {
     state.me = localStorage.getItem("colling:me")||null;
-    try {
-      JSON.parse(localStorage.getItem("colling:chats")||"[]")
-        .forEach(p=>state.chats.set(p,{unread:0,online:false}));
-    } catch {}
+    try { JSON.parse(localStorage.getItem("colling:chats")||"[]")
+      .forEach(p=>state.chats.set(p,{unread:0,online:false})); } catch {}
   };
 
-  // ======== قائمة المحادثات + خروج ========
+  // ===== قائمة المحادثات =====
   const renderChatList = () => {
     chatList.innerHTML = "";
     for (const [p, meta] of state.chats.entries()) {
@@ -130,7 +125,7 @@
     stickBottom = true; scrollToBottom(true);
   };
 
-  // ======== socket.io (WebSocket فقط لأداء أفضل) ========
+  // ===== Socket.IO =====
   const socket = io({ transports:["websocket"], autoConnect:false, upgrade:false, reconnection:true });
   socket.on("connect", () => socket.emit("register", { number: state.me }));
   socket.on("registered", ({ number }) => showToast("تم تسجيل الرقم: " + number));
@@ -170,7 +165,7 @@
     }
   });
 
-  // ======== WebRTC (صوت فقط) ========
+  // ===== WebRTC =====
   const createPC = () => {
     const pc = new RTCPeerConnection({
       iceServers:[
@@ -178,8 +173,7 @@
         {urls:"stun:stun1.l.google.com:19302"}
       ]
     });
-    try { pc.addTransceiver('audio', { direction: 'sendrecv' }); } catch(_) {}
-
+    // لا نضيف Transceiver يدويًا — نخلي addTrack يتولّى
     pc.onicecandidate = e => {
       if(e.candidate && state.peer) socket.emit("webrtc-ice", { peer: state.peer, candidate: e.candidate });
     };
@@ -190,7 +184,6 @@
     return pc;
   };
 
-  // فتح مايك بسيط وثابت (بدون تبديل أثناء المكالمة)
   async function getMicSimple() {
     const s = await navigator.mediaDevices.getUserMedia({
       audio: {
@@ -219,75 +212,27 @@
     return s;
   };
 
-  // ضبط bitrate للصوت (≈24kbps) لتحسين الثبات
   async function tuneSenderBitrate(pc){
     try {
       const snd = pc.getSenders().find(s => s.track && s.track.kind === 'audio');
       if (snd && snd.getParameters) {
         const p = snd.getParameters();
-        p.encodings = [{ maxBitrate: 20000 }]; // متوافق مع إعدادات SDP أدناه
+        p.encodings = [{ maxBitrate: 24000 }];
         await snd.setParameters(p);
       }
     } catch(_) {}
   }
 
-  // تطعيم SDP الخاص بـ Opus لمنع DTX وتثبيت الإرسال على Android 14
-  function mungeOpusSdp(sdp) {
-    const lines = sdp.split('\r\n');
-    // ابحث عن رقم الحمولة (PT) للـ opus
-    let opusPt = null, rtpmapIndex = -1;
-    for (let i=0; i<lines.length; i++) {
-      const m = lines[i].match(/^a=rtpmap:(\d+)\s+opus\/\d+/i);
-      if (m) { opusPt = m[1]; rtpmapIndex = i; break; }
-    }
-    if (!opusPt) return sdp;
-
-    // ابحث عن fmtp للـ opus
-    let fmtpIndex = -1;
-    for (let i=0; i<lines.length; i++) {
-      if (lines[i].toLowerCase().startsWith(`a=fmtp:${opusPt}`)) { fmtpIndex = i; break; }
-    }
-
-    const params = [
-      'stereo=0',
-      'maxaveragebitrate=20000',
-      'useinbandfec=1',
-      'cbr=1',
-      'dtx=0',
-      'ptime=20',
-      'sprop-maxcapturerate=16000'
-    ];
-
-    if (fmtpIndex >= 0) {
-      // أضف المعاملات إذا غير موجودة
-      let line = lines[fmtpIndex];
-      params.forEach(kv => {
-        const [k, v] = kv.split('=');
-        const re = new RegExp(`(;|\\s)${k}=[^;\\s]*`);
-        if (re.test(line)) {
-          line = line.replace(re, `;${k}=${v}`);
-        } else {
-          line += `;${kv}`;
-        }
-      });
-      lines[fmtpIndex] = line;
-    } else if (rtpmapIndex >= 0) {
-      // أضف fmtp جديد بعد rtpmap
-      const fmtp = `a=fmtp:${opusPt} ${params.join(';')}`;
-      lines.splice(rtpmapIndex + 1, 0, fmtp);
-    }
-    return lines.join('\r\n');
-  }
-
-  // ======== المتصل (Caller) ========
+  // ===== المتصل (Caller) =====
   const startCall = async () => {
     if(!state.peer) return showToast("اختر محادثة أولاً",{center:true});
     unlockAudioOnce();
+    state.iAmCaller = true;
 
     // 1) افتح المايك مرة واحدة
     await ensureLocal();
 
-    // 2) أنشئ اتصال جديد (إن وُجد قديم أغلقه)
+    // 2) أنشئ اتصال جديد
     if (state.pc) { try { state.pc.close(); } catch{} }
     state.pc = createPC();
 
@@ -297,18 +242,11 @@
     // 4) اضبط معدل البت للصوت
     await tuneSenderBitrate(state.pc);
 
-    // 5) أنشئ Offer صوت فقط + عطّل VAD
-    let offer = await state.pc.createOffer({
-      offerToReceiveAudio:true,
-      offerToReceiveVideo:false,
-      voiceActivityDetection:false
-    });
+    // 5) أنشئ Offer (صوت فقط)
+    const offer = await state.pc.createOffer({ offerToReceiveAudio:true, offerToReceiveVideo:false });
+    await state.pc.setLocalDescription(offer);
 
-    // 6) طعّم الـSDP للـ Opus
-    const munged = mungeOpusSdp(offer.sdp);
-    await state.pc.setLocalDescription({ type: offer.type, sdp: munged });
-
-    // 7) أرسل الـSDP بعد تأخير بسيط
+    // 6) أرسل الـSDP بعد تأخير بسيط
     setTimeout(() => {
       socket.emit("webrtc-offer", { peer: state.peer, sdp: state.pc.localDescription });
     }, 200);
@@ -316,13 +254,13 @@
     showToast("جاري الاتصال...", {center:true,duration:1200});
   };
 
-  // ======== المُجيب (Callee) ========
+  // ===== المجيب (Callee) =====
   const acceptIncoming = async (from, sdp) => {
     unlockAudioOnce();
+    state.iAmCaller = false;
     state.peer = from; renderChatList();
     state.pc = createPC();
 
-    // نحاول طريقتين: (أ) setRemote ثم getUserMedia، وإن فشلت نبدل
     try {
       await state.pc.setRemoteDescription(sdp);
       await ensureLocal();
@@ -335,14 +273,8 @@
 
     await tuneSenderBitrate(state.pc);
 
-    // أنشئ Answer وطعّم الـSDP
-    let answer = await state.pc.createAnswer({
-      offerToReceiveAudio:true,
-      offerToReceiveVideo:false,
-      voiceActivityDetection:false
-    });
-    const munged = mungeOpusSdp(answer.sdp);
-    await state.pc.setLocalDescription({ type: answer.type, sdp: munged });
+    const answer = await state.pc.createAnswer({ offerToReceiveAudio:true, offerToReceiveVideo:false });
+    await state.pc.setLocalDescription(answer);
 
     setTimeout(() => {
       socket.emit("webrtc-answer", { peer: from, sdp: state.pc.localDescription });
@@ -354,7 +286,8 @@
   };
 
   const endCall = () => {
-    if (state.pc) { try { state.pc.close(); } catch{} state.pc = null; }
+    state.iAmCaller = false;
+    if (state.pc) { try{state.pc.close();}catch{} state.pc = null; }
     if (state.localStream) {
       try { state.localStream.getTracks().forEach(t => t.stop()); } catch {}
       state.localStream = null;
@@ -369,7 +302,7 @@
       remoteAudioEl.playsInline = true;
       try { remoteAudioEl.muted = false; } catch(_) {}
       try { remoteAudioEl.volume = 1.0; } catch(_) {}
-      remoteAudioEl.play?.().catch(()=>{ /* سيتفعل بعد أول نقرة بفضل unlock */ });
+      remoteAudioEl.play?.().catch(()=>{});
     }
   };
 
@@ -377,6 +310,7 @@
     if(remoteAudioEl){ remoteAudioEl.srcObject=null; }
   };
 
+  // ===== إشارات WebRTC =====
   socket.on("webrtc-offer", ({ from, sdp }) => {
     incomingFrom.textContent=`من: ${from}`;
     incomingModal.classList.add("show");
@@ -391,6 +325,14 @@
   socket.on("webrtc-answer", async ({ from, sdp }) => {
     if(!state.pc) return;
     await state.pc.setRemoteDescription(sdp);
+
+    // 🔧 مهم جدًا: ثبّت تراك المايك بعد اكتمال التفاوض (يحل كتم المتصل)
+    try {
+      const snd = state.pc.getSenders().find(s => s.track && s.track.kind === 'audio');
+      const tr = state.localStream?.getAudioTracks?.()[0];
+      if (snd && tr) await snd.replaceTrack(tr);
+    } catch(e){}
+
     remoteAudioEl?.play?.().catch(()=>{});
     showToast("تم الاتصال ✔",{center:true});
   });
@@ -400,7 +342,7 @@
     try{ await state.pc.addIceCandidate(candidate);}catch(e){}
   });
 
-  // ======== actions ========
+  // ===== actions =====
   const exitToList = () => {
     clearMessagesUI();
     sidebar.classList.add("open");
@@ -452,7 +394,7 @@
     showToast(state.muted?"تم الكتم":"تم إلغاء الكتم");
   };
 
-  callBtn.onclick   = startCall;  // ← المايك يفتح هنا فقط (User Gesture)
+  callBtn.onclick   = startCall;
   endCallBtn.onclick= endCall;
 
   exitChatBtn && (exitChatBtn.onclick = () => {
@@ -461,7 +403,7 @@
     exitToList();
   });
 
-  // ======== drawer ========
+  // ===== Drawer =====
   const toggleDrawer = ()=>{
     sidebar.classList.toggle("open");
     overlay.classList.toggle("show");
@@ -470,7 +412,7 @@
   overlay.onclick  = toggleDrawer;
   if (fab) fab.onclick = toggleDrawer;
 
-  // ======== boot ========
+  // ===== Boot =====
   (async ()=>{
     loadLocal();
     if(!state.me){
@@ -482,8 +424,6 @@
     renderChatList();
     clearMessagesUI();
     socket.connect();
-
-    // Keep-alive بسيط لتخفيف الـ cold start أثناء الجلسة
     setInterval(()=>{ fetch('/healthz').catch(()=>{}); }, 240000);
   })();
 
