@@ -218,7 +218,6 @@
       const tracks = s.getAudioTracks();
       if (tracks.length === 0) throw new Error("No audio track");
       const t = tracks[0];
-      // إذا Disabled نفعل
       if (t && t.enabled === false) t.enabled = true;
       console.log("Mic track state:", t.readyState, "enabled:", t.enabled);
     } catch (e) {
@@ -229,11 +228,10 @@
 
   const ensureLocal = async () => {
     if(state.localStream) return state.localStream;
-    // ⚠️ مهم: يتم استدعاؤها فقط من زر الاتصال (user gesture)
+    // ⚠️ يُستخدم غالبًا عند الطرف المُجيب
     const s = await getMicStreamWithRetry();
     state.localStream = s;
 
-    // عرض محلي (منع صدى)
     if (localAudioEl) {
       localAudioEl.srcObject = s;
       localAudioEl.muted = true;
@@ -255,32 +253,138 @@
     } catch(_) {}
   }
 
+  // ======== (جديد) أدوات حل مشكلة تعطل مايك المتصل ========
+
+  // أوقف أي ستريم قديم بأمان
+  function stopStream(s) {
+    if (!s) return;
+    try { s.getTracks().forEach(t => t.stop()); } catch {}
+  }
+
+  // بروفايلات مايك متعددة (تفيد أجهزة عنيدة في Android 14)
+  const MIC_PROFILES = [
+    { audio: { echoCancellation:true, noiseSuppression:true, autoGainControl:true, channelCount:1 }, video:false },
+    { audio: { echoCancellation:false, noiseSuppression:false, autoGainControl:false, channelCount:1 }, video:false },
+    { audio: true, video:false }
+  ];
+
+  // افتح مايك جديد من الصفر مع ربط أحداث التعطّل
+  async function openMicFresh() {
+    // أقفل أي ستريم سابق
+    stopStream(state.localStream);
+    state.localStream = null;
+
+    let lastErr;
+    for (const prof of MIC_PROFILES) {
+      try {
+        const s = await navigator.mediaDevices.getUserMedia(prof);
+        const track = s.getAudioTracks()[0];
+        if (!track) throw new Error("لا يوجد تراك صوت");
+        track.enabled = true;
+
+        // راقب التعطّل/الإسكات من النظام
+        track.onmute = () => {
+          console.warn("Mic track muted — repairing...");
+          repairCallerMic();
+        };
+        track.onended = () => {
+          console.warn("Mic track ended — repairing...");
+          repairCallerMic();
+        };
+
+        state.localStream = s;
+        // عرض محلي (صامت لتفادي الصدى)
+        if (localAudioEl) {
+          localAudioEl.srcObject = s;
+          localAudioEl.muted = true;
+          localAudioEl.play?.().catch(()=>{});
+        }
+        return s;
+      } catch (e) { lastErr = e; }
+    }
+    throw lastErr || new Error("تعذر فتح المايك");
+  }
+
+  // استبدال التراك في نفس الـSender بدون إنهاء المكالمة
+  async function repairCallerMic() {
+    try {
+      if (!state.pc) return;
+      const newStream = await openMicFresh();
+      const newTrack  = newStream.getAudioTracks()[0];
+      const sender = state.pc.getSenders().find(s => s.track && s.track.kind === 'audio');
+      if (sender && newTrack) {
+        await sender.replaceTrack(newTrack);
+        showToast("تم إصلاح المايك ✅", {center:true});
+      }
+    } catch (e) {
+      console.error("repairCallerMic failed", e);
+      showToast("تعذر إصلاح المايك", {center:true});
+    }
+  }
+
+  // مراقبة الإرسال: لو مافيش حزم/طاقة 2-3 ثواني نصلّح
+  let __OUT_T = null, __OUT_ZERO = 0;
+  function startOutboundMonitor() {
+    clearInterval(__OUT_T);
+    __OUT_ZERO = 0;
+    __OUT_T = setInterval(async () => {
+      try {
+        if (!state.pc) return;
+        const snd = state.pc.getSenders().find(s => s.track && s.track.kind === 'audio');
+        if (!snd) return;
+        const stats = await snd.getStats();
+        let packets = 0;
+        stats.forEach(r => {
+          if (r.type === 'outbound-rtp' && r.kind === 'audio') packets += (r.packetsSent||0);
+        });
+        if (packets === 0) __OUT_ZERO++; else __OUT_ZERO = 0;
+        if (__OUT_ZERO >= 3) {        // ~3 ثواني بلا إرسال
+          console.warn("No outbound audio — auto-repair");
+          __OUT_ZERO = 0;
+          await repairCallerMic();
+        }
+      } catch {}
+    }, 1000);
+  }
+
+  // ======== المتصل (Caller) ========
   const startCall = async () => {
     if(!state.peer) return showToast("اختر محادثة أولاً",{center:true});
     unlockAudioOnce();
 
-    // 1) احصل على المايك (بعد الضغط على الزر)
-    await ensureLocal();
+    // 1) افتح مايك جديد من الصفر (المهم لأندرويد 14)
+    await openMicFresh();
 
-    // 2) أنشئ PC وأضف التراك
+    // 2) أنشئ اتصال جديد (إن وُجد قديم أغلقه)
+    if (state.pc) { try { state.pc.close(); } catch{} }
     state.pc = createPC();
-    state.localStream.getAudioTracks().forEach(t=>state.pc.addTrack(t, state.localStream));
 
-    // 3) اضبط البت
+    // 3) أضف التراك الصوتي الحالي
+    state.localStream.getAudioTracks().forEach(t => state.pc.addTrack(t, state.localStream));
+
+    // 4) اضبط معدل البت للصوت
     await tuneSenderBitrate(state.pc);
 
-    // 4) اصنع Offer وحدد أنه صوت فقط
-    const offer = await state.pc.createOffer({ offerToReceiveAudio:true, offerToReceiveVideo:false });
+    // 5) أنشئ Offer صوت فقط + عطّل VAD (بعض أجهزة 14 تصمت البداية)
+    const offer = await state.pc.createOffer({
+      offerToReceiveAudio:true,
+      offerToReceiveVideo:false,
+      voiceActivityDetection:false
+    });
     await state.pc.setLocalDescription(offer);
 
-    // 5) تأخير بسيط (Android 14)
+    // 6) أرسل الـSDP بعد تأخير بسيط
     setTimeout(() => {
       socket.emit("webrtc-offer", { peer: state.peer, sdp: state.pc.localDescription });
     }, 250);
 
+    // 7) فعّل مراقبة الإرسال (تصليح تلقائي لو وقف الإرسال)
+    startOutboundMonitor();
+
     showToast("جاري الاتصال...", {center:true,duration:1400});
   };
 
+  // ======== المُجيب (Callee) ========
   const acceptIncoming = async (from, sdp) => {
     unlockAudioOnce();
     state.peer = from; renderChatList();
@@ -300,7 +404,11 @@
 
     await tuneSenderBitrate(state.pc);
 
-    const answer = await state.pc.createAnswer({ offerToReceiveAudio:true, offerToReceiveVideo:false });
+    const answer = await state.pc.createAnswer({
+      offerToReceiveAudio:true,
+      offerToReceiveVideo:false,
+      voiceActivityDetection:false
+    });
     await state.pc.setLocalDescription(answer);
 
     setTimeout(() => {
@@ -315,10 +423,7 @@
 
   const endCall = () => {
     if(state.pc){ try{state.pc.close();}catch{} state.pc=null; }
-    if(state.localStream){
-      try{ state.localStream.getTracks().forEach(t=>t.stop()); }catch{}
-      state.localStream = null;
-    }
+    if(state.localStream){ stopStream(state.localStream); state.localStream = null; }
     detachRemote();
     showToast("تم إنهاء المكالمة",{center:true,duration:1400});
   };
